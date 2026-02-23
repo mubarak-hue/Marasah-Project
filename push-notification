@@ -1,0 +1,11 @@
+email = {user_driver};
+pushMessage = "Request " + requestNo + ": Items have been mobilized. Awaiting Driver to proceed with delivery.";
+sub = "Delivery Action – Awaiting Driver: " + requestNo;
+portalEmail = {};
+orgEmail = {};
+for each  user in userMasterList
+{
+    portalEmail.add(user.User_Email);
+    orgEmail.add(user.Organization_Email);
+}
+response = zoho.pushNotification({portalEmail},sub,pushMessage,"LogiRequest_Report",input.ID);

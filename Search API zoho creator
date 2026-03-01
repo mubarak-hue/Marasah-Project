@@ -1,0 +1,1 @@
+					ftRecntstocks = zoho.creator.getRecords("m.alsuhaimi_marasah","fixed-assets","All_FIFO_Stock_Ledgers","Warehouse == " + whRecID.toNumber() + " && Item == " + invRecID.toNumber(),1,200,"z_creator");

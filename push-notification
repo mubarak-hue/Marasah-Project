@@ -9,3 +9,11 @@ for each  user in userMasterList
     orgEmail.add(user.Organization_Email);
 }
 response = zoho.pushNotification({portalEmail},sub,pushMessage,"LogiRequest_Report",input.ID);
+
+
+make it two digit after decimal point 
+
+Unit_Price = 13.58976212;
+temp = (Unit_Price * 10000).toLong();
+finalPrice = temp / 10000.0000;
+info finalPrice;

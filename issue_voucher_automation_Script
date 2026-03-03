@@ -1,4 +1,5 @@
-	// 	new version 
+void issue_voucher_from_logiRequest(int lgID)
+{
 	lgReq = LogiRequest[ID == lgID];
 	journalRequired = false;
 	transactions_created = true;
@@ -56,13 +57,13 @@
 					info "Inventory item not found";
 					continue;
 				}
-				// 				info "Warehouse from line :"+ issuvhSubForm.Warehouse;
+				// info "Warehouse from line :"+ issuvhSubForm.Warehouse;
 				whLocID = Warehouse[ID == issuvhSubForm.Warehouse];
-				// 				info "warehouse ID :"+ whLocID;
+				// info "warehouse ID :"+ whLocID;
 				fifoRows = Transactions[Inventory_Item == invMaster.ID && Destination_Location == whLocID.ID && Source_Stock > 0] sort by Batch_Count asc;
 				//fifoRows = FIFO_Stock_Ledger[Item == invMaster && Warehouse == whLocID.ID &&  Stock_In > 0]sort by Batch asc;
-				info invMaster.Name;
-				// 				info "Transfered Qty :" + fifoRows.ID;
+				// 				info invMaster.Name;
+				// info "Transfered Qty :" + fifoRows.ID;
 				totalAvailable = 0;
 				for each  x in fifoRows
 				{
@@ -104,23 +105,23 @@
 						totalItemPrice = totalItemPrice + batchTotal;
 						batch.Source_Stock=batch.Source_Stock - qtyToTake;
 						batch.Stock_Out=ifnull(batch.Stock_Out,0) + qtyToTake;
-// 						updating the qty on invenotry master with total price	
-// 						info "Batch Warehouse ID :"+ batch.Destination_Location;
+						// 						updating the qty on invenotry master with total price	
+						// 						info "Batch Warehouse ID :"+ batch.Destination_Location;
 						wharehouse_lc_stock = Warehouse_Location_Stock[Ware_house_Location == batch.Destination_Location && Item == invMaster];
-// 						info wharehouse_lc_stock.Available_Stock;
+						// 						info wharehouse_lc_stock.Available_Stock;
 						info "********************";
 						if(wharehouse_lc_stock != null)
 						{
 							whqty_after_consumed = wharehouse_lc_stock.Available_Stock - qtyToTake.toDecimal();
-							wharehouse_lc_stock.Available_Stock = whqty_after_consumed.toDecimal();
+							wharehouse_lc_stock.Available_Stock=whqty_after_consumed.toDecimal();
 						}
 						else
 						{
 							info "Warehouse stock record missing";
 						}
+						remainingQty = remainingQty - qtyToTake;
 					}
 				}
-// 				info "Inventory Qty After :"+ invMaster.Quantity +" - total price :"+ invMaster.Total_Price ;
 				if(remainingQty > 0 || totalItemPrice <= 0)
 				{
 					transactions_created = false;
@@ -128,10 +129,9 @@
 					continue;
 				}
 				invMaster.Quantity=(invMaster.Quantity.toDecimal() - choosenQty).toString();
-				// Store FIFO total price
-				invMaster.Total_Price=totalItemPrice;
-				info "Inventory Qty After :"+ invMaster.Quantity +" - total price :"+ invMaster.Total_Price ;
-				info "*****************";
+				invMaster.Total_Price=invMaster.Rate * invMaster.Quantity.toDecimal();
+				// 				invMaster.Total_Price = totalItemPrice;
+				info "Inventory Qty After :" + invMaster.Quantity + " - total price :" + invMaster.Total_Price;
 				// ====== JOURNAL LINES ======
 				if(totalItemPrice > 0)
 				{
@@ -266,21 +266,22 @@
 					info "Inventory issued without financial impact";
 				}
 			}
-		}
-		else
-		{
-			info "The asset / Item already issued";
+			else
+			{
+				info "The asset / Item already issued";
+			}
 		}
 	}
-	// ===== FINAL STATUS UPDATE =====
-// 	if(transactions_created == true)
-// 	{
-// 		lgReq.Status="Issued";
-// 		info "Issue Voucher Approved";
-// 	}
-// 	else
-// 	{
-// 		lgReq.Status="Mobilization Completed";
-// 		// 		lgReq.Status="Delivered";
-// 		info "Issue Voucher Held";
-// 	}
+	// 	 ===== FINAL STATUS UPDATE =====
+	//      if(transactions_created == true)
+	//      {
+	//          lgReq.Status="Issued";
+	//          info "Issue Voucher Approved";
+	//      }
+	//      else
+	//      {
+	//          lgReq.Status="Mobilization Completed";
+	//          //      lgReq.Status="Delivered";
+	//          info "Issue Voucher Held";
+	//      }
+}

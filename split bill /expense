@@ -1,0 +1,449 @@
+void MB_ZOHO_BOOKS_INTEG.split_bills_into_expense_and_bill(int billID)
+{
+	bill = Purchase_of_Asset[ID == billID];
+	lgr = LogiRequest[ID == bill.LogiRequest1];
+	ftUser = User_Master[Position == "Chief Accountants" || Position == "Accounting & Finance Manager" || Position == "Accountants"];
+	orgEmail = {};
+	portalEmail = {};
+	for each  user in ftUser
+	{
+		orgEmail.add(user.Organization_Email);
+		portalEmail.add(user.User_Email);
+	}
+	hasExpense = false;
+	hasBill = false;
+	getVendor = Add_Vendor[ID == bill.Vendor_Name].Zoho_Books_Id;
+	// ================= VENDOR =================
+	if(getVendor != null && getVendor != "")
+	{
+		getRelatedVendor = invokeurl
+		[
+			url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Vendor_Report?criteria=Zoho_Books_Id.contains(\"" + getVendor + "\")"
+			type :GET
+			connection:"z_creator"
+		];
+		srchVen = getRelatedVendor.get("data").get(0);
+		vendorID = srchVen.get("ID");
+	}
+	// ================= PROJECT LIST =================
+	getAllProject = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Projects"
+		type :GET
+		connection:"z_creator"
+	];
+	prjctList = List();
+	for each  pl in getAllProject.get("data")
+	{
+		prjMap = Map();
+		prjMap.put("books_id",pl.get("Zoho_Books_ID"));
+		prjMap.put("ID",pl.get("ID"));
+		prjctList.add(prjMap);
+	}
+	// ================= BANK ACCOUNTS =================
+	filterProcAcc = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Bank_Accounts"
+		type :GET
+		connection:"z_creator"
+	];
+	bankAccList = List();
+	for each  prcAcc in filterProcAcc.get("data")
+	{
+		prcMap = Map();
+		prcMap.put("acc_code",prcAcc.get("Account_code"));
+		prcMap.put("acc_rec_id",prcAcc.get("ID"));
+		bankAccList.add(prcMap);
+	}
+	// ================= CHART OF ACCOUNTS =================
+	Accresponse = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/chartofaccounts_report"
+		type :GET
+		connection:"z_creator"
+	];
+	listOfAccounts = List();
+	for each  acc in Accresponse.get("data")
+	{
+		accMap = Map();
+		accMap.put("account_code",acc.get("account_code"));
+		accMap.put("account_id",acc.get("account_id"));
+		accMap.put("acc_rec_ID",acc.get("ID"));
+		listOfAccounts.add(accMap);
+	}
+	// ================= MAPS =================
+	expenseItem = Map();
+	expenseItemList = List();
+	bill_items_List = List();
+	BillingMap = Map();
+	// 	Assets = Map();
+	// 	InventoryItems = Map();
+	// ================= PROCUREMENT CARD =================
+	if(bill.Procurement_Card != null)
+	{
+		procurmentCardAcc = Chart_of_Accounts[ID == bill.Procurement_Card].Account_Code;
+		for each  pcAcc in bankAccList
+		{
+			if(pcAcc.get("acc_code") == procurmentCardAcc)
+			{
+				expenseItem.put("Paid_Through",pcAcc.get("acc_rec_id"));
+				// 				Assets.put("Paid_Through",pcAcc.get("acc_rec_id"));
+				BillingMap.put("Paid_Through",pcAcc.get("acc_rec_id"));
+				break;
+			}
+		}
+	}
+	// ================= LINE LOOP =================
+	request_proceesd_exp_line = List();
+	request_proceesd_ass_inv_line = List();
+	taxTotal = 0;
+	line_amount = 0;
+	for each  billItems in bill.Asset_Details
+	{
+		if(billItems.PO_Category == "Direct Expense" && billItems.Billed_Expensed == true)
+		{
+			hasExpense = true;
+			expenseItemMap = Map();
+			expenseItemMap.put("Notes",billItems.Item_Description);
+			lineExpAcc = Chart_of_Accounts[ID == billItems.Account].Account_Code;
+			// 			info lineExpAcc;
+			for each  expAcc in listOfAccounts
+			{
+				if(expAcc.get("account_code") == lineExpAcc)
+				{
+					expenseItemMap.put("Expense_Account",expAcc.get("acc_rec_ID"));
+					break;
+				}
+			}
+			line_qty_amount = billItems.Rate.toDecimal() * ifnull(billItems.Quantity,1);
+			expenseItemMap.put("Amount",line_qty_amount.toDecimal());
+			expenseItemMap.put("Tax_Amount",billItems.Tax_Amount.toDecimal());
+			taxTotal = taxTotal + billItems.Tax_Amount.toDecimal();
+			line_amount = line_amount + billItems.Rate.toDecimal();
+			if(billItems.Tax != null)
+			{
+				getTaxName = Tax[ID == billItems.Tax].Tax_Name;
+				if(getTaxName == "Standard Rate")
+				{
+					expenseItemMap.put("Tax","Standard Rate -15%");
+				}
+				else
+				{
+					expenseItemMap.put("Tax","Zero Rate - 0%");
+				}
+			}
+			if(billItems.Project != null)
+			{
+				lPrjt = Projects[ID == billItems.Project].Zoho_Books_ID;
+				for each  lp in prjctList
+				{
+					if(lp.get("books_id") == lPrjt)
+					{
+						expenseItem.put("Project_Name",lp.get("ID"));
+						break;
+					}
+				}
+			}
+			if(billItems.Branch1 != null)
+			{
+				lBrn = Branch[ID == billItems.Branch1].Branch_Name;
+				expenseItemMap.put("Branch_in_line",lBrn.toString());
+			}
+			if(!billItems.Department.isEmpty() && billItems.Department != "")
+			{
+				expenseItemMap.put("Department_in_line",billItems.Department.toString());
+			}
+			expenseItemList.add(expenseItemMap);
+			request_proceesd_exp_line.add(billItems.Requested_Item);
+		}
+		if(billItems.PO_Category == "New Fixed Asset" && billItems.Billed_Expensed == true)
+		{
+			hasBill = true;
+			AssetsMap = Map();
+			AssetsMap.put("Description",billItems.Item_Description);
+			assetAcc = Chart_of_Accounts[ID == billItems.Account].Account_Code;
+			for each  lsAcc in listOfAccounts
+			{
+				if(lsAcc.get("account_code") == assetAcc)
+				{
+					AssetsMap.put("Account",lsAcc.get("acc_rec_ID"));
+					break;
+				}
+			}
+			AssetsMap.put("QTY",billItems.Quantity);
+			AssetsMap.put("Rate",billItems.Rate);
+			AssetsMap.put("Amount",billItems.Amount);
+			if(billItems.Tax != null)
+			{
+				getTaxName = Tax[ID == billItems.Tax].Tax_Name;
+				if(getTaxName == "Standard Rate")
+				{
+					AssetsMap.put("Tax","Standard Rate - 15%");
+				}
+				else
+				{
+					AssetsMap.put("Tax","Zero Rate - 0");
+				}
+			}
+			if(billItems.Project != null)
+			{
+				lPrjt = Projects[ID == billItems.Project].Zoho_Books_ID;
+				for each  lp in prjctList
+				{
+					if(lp.get("books_id") == lPrjt)
+					{
+						AssetsMap.put("Project",lp.get("ID"));
+						break;
+					}
+				}
+			}
+			if(billItems.Branch1 != null)
+			{
+				lBrn = Branch[ID == billItems.Branch1].Branch_Name;
+				AssetsMap.put("Branch",lBrn.toString());
+			}
+			if(!billItems.Department.isEmpty() && billItems.Department != "")
+			{
+				AssetsMap.put("Department",billItems.Department.toString());
+			}
+			bill_items_List.add(AssetsMap);
+			request_proceesd_ass_inv_line.add(billItems.Requested_Item);
+		}
+		if(billItems.PO_Category == "Inventory Item" && billItems.Billed_Expensed == true)
+		{
+			hasBill = true;
+			inventoryMap = Map();
+			inventoryMap.put("Description",billItems.Item_Description);
+			invAcc = Chart_of_Accounts[ID == billItems.Account].Zoho_Books_ID;
+			for each  lsAcc in listOfAccounts
+			{
+				if(lsAcc.get("account_id") == invAcc)
+				{
+					inventoryMap.put("Account",lsAcc.get("acc_rec_ID"));
+					break;
+				}
+			}
+			inventoryMap.put("QTY",billItems.Quantity);
+			inventoryMap.put("Rate",billItems.Rate);
+			inventoryMap.put("Amount",billItems.Amount);
+			if(getTaxName == "Standard Rate")
+			{
+				inventoryMap.put("Tax","Standard Rate - 15%");
+			}
+			else
+			{
+				inventoryMap.put("Tax","Zero Rate - 0");
+			}
+			if(billItems.Project != null)
+			{
+				lPrjt = Projects[ID == billItems.Project].Zoho_Books_ID;
+				for each  lp in prjctList
+				{
+					if(lp.get("books_id") == lPrjt)
+					{
+						inventoryMap.put("Project",lp.get("ID"));
+						break;
+					}
+				}
+			}
+			if(billItems.Branch1 != null)
+			{
+				lBrn = Branch[ID == billItems.Branch1].Branch_Name;
+				inventoryMap.put("Branch",lBrn.toString());
+			}
+			if(!billItems.Department.isEmpty() && billItems.Department != "")
+			{
+				inventoryMap.put("Department",billItems.Department.toString());
+			}
+			bill_items_List.add(inventoryMap);
+			request_proceesd_ass_inv_line.add(billItems.Requested_Item);
+		}
+	}
+	// ================= SPLIT CREATION =================
+	if(hasExpense && expenseItemList.size() > 0)
+	{
+		// CREATE EXPENSE RECORD
+		expenseItem.put("Date_field",bill.Bill_Date.toString("dd-MMM-yyyy"));
+		expenseItem.put("Itemaize",true);
+		expenseItem.put("Status","Draft");
+		expenseItem.put("Reference",ifnull(bill.Bill_No,1));
+		expenseItem.put("Place_Of_Supply","SA");
+		amount_inc_tax = line_amount + taxTotal;
+		expenseItem.put("Tax_Percentage",taxTotal.toDecimal());
+		expenseItem.put("Amount_Including_Tax",amount_inc_tax.toDecimal());
+		if(vendorID != null)
+		{
+			expenseItem.put("Vendor",vendorID);
+		}
+		else
+		{
+			expenseItem.put("Vendor_Name",bill.Vendor_Name.Vendor_Display_Name);
+		}
+		expenseItem.put("LogiRequest1",bill.LogiRequest1.ID);
+		expenseItem.put("Expense_Items",expenseItemList);
+		expenseItem.put("Logs","Created from LogiRequest by " + zoho.loginuser + " on " + zoho.currenttime);
+		otherMap = Map();
+		// 		info expenseItem;
+		createExpense = zoho.creator.createRecord("m.alsuhaimi_marasah","finance-operations","Expense",expenseItem,otherMap,"z_creator");
+		// 		info createExpense;
+		info "Expense Record :" + createExpense.get("message");
+		if(createExpense.get("code") == 3000)
+		{
+			expRecordID = createExpense.get("data").get("ID");
+			bill.FG_Expense=expRecordID;
+			info "Created Expense Record ID :" + expRecordID;
+			pushmessage = "A new expense created via LogiRequest is awaiting approval in FinanceGate.";
+			notSub = "Action Required: Expense Approval Pending - " + LogiRequest[ID == bill.LogiRequest1].Request;
+			// 			response = zoho.pushNotification({portalEmail},notSub,pushmessage,"All_Expenses",expRecordID);
+			// 			orgEmail.add("mubarak@marasah.com");
+			sendmail
+			[
+				from :zoho.adminuserid
+				to :orgEmail
+				subject :notSub
+				message :pushmessage
+			]
+			if(bill.Documents.size() > 0 && bill.Documents != null)
+			{
+				docList = List();
+				for each  docpath in bill.Documents
+				{
+					url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Bills1/" + bill.ID + "/Documents/download?filepath=" + docpath;
+					var = invokeurl
+					[
+						url :url_endpoint
+						type :GET
+						connection:"z_creator"
+					];
+					//info var;
+					var.setParamName("file");
+					docList.add(var);
+				}
+				// 			if(bill.Documents.size() > 0 && bill.Documents != null)
+				// 			{
+				uploadURL = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + expRecordID + "/File_upload/upload";
+				resp = invokeurl
+				[
+					url :uploadURL
+					type :POST
+					files:var
+					connection:"z_creator"
+				];
+				info "File uploaded ( Expense ) → " + resp;
+				sendmail
+				[
+					from :zoho.loginuserid
+					to :"mubarak@marasah.com"
+					subject :"Expense File Upload Response " + lgr.Request
+					message :resp
+				]
+			}
+			// UPDATIE THE EXPENSE RELATED LINE ITEMS ARE TRUE 
+			for each  exID in request_proceesd_exp_line
+			{
+				lgrReqItem = Requested_Items[ID == exID];
+				lgrReqItem.Expense_Billed=true;
+			}
+		}
+	}
+	if(hasBill && bill_items_List.size() > 0)
+	{
+		// CREATE BILL RECORD (Asset / Inventory)
+		// 		info "Assets : " + Assets;
+		// 		info "Inventory  :" + InventoryItems;
+		BillingMap = Map();
+		BillingMap.put("Bill",ifnull(bill.Bill_No,1));
+		BillingMap.put("Bill_date",bill.Bill_Date.toString("dd-MMM-yyyy"));
+		BillingMap.put("Vendor_Name",vendorID);
+		BillingMap.put("Order_Number",bill.Order_Number);
+		BillingMap.put("Payment_Terms",bill.Payment_Terms);
+		BillingMap.put("Due_date1",bill.Due_Date);
+		// 		BillingMap.put("",bill.
+		BillingMap.put("LogiRequest",bill.LogiRequest1.ID);
+		BillingMap.put("Status","Draft");
+		BillingMap.put("Bill_Items",bill_items_List);
+		BillingMap.put("Sub_Total",ifnull(bill.Sub_Total,0.00));
+		BillingMap.put("Tax_Total",ifnull(bill.Tax_Total,0.00));
+		BillingMap.put("Total",ifnull(bill.Total,0.00));
+		BillingMap.put("Notes",bill.Notes);
+		BillingMap.put("Logs","Created from LogiRequest by " + zoho.loginuser + " on " + zoho.currenttime);
+		paramsMap = Map();
+		paramsList = List();
+		paramsList.add(BillingMap);
+		paramsMap.put("data",paramsList);
+		createRecords = invokeurl
+		[
+			url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/form/Bills"
+			type :POST
+			parameters:paramsMap.toString()
+			connection:"z_creator"
+		];
+		info "Bill Created  ( FG ) :" + createRecords;
+		getResp = createRecords.get("result").get(0);
+		if(getResp.get("code") == 3000)
+		{
+			billRecID = getResp.get("data").get("ID");
+			bill.FG_Bill=billRecID;
+			pushmessage1 = "A new bill created via LogiRequest is awaiting approval in FinanceGate.";
+			notSub1 = "Action Required: Bill Approval Pending - " + LogiRequest[ID == bill.LogiRequest1].Request;
+			sendmail
+			[
+				from :zoho.adminuserid
+				to :orgEmail
+				subject :notSub
+				message :pushmessage
+			]
+			// 			response = zoho.pushNotification({portalEmail},notSub1,pushmessage1,"All_Bills",billRecID.toLong());
+			// 			info "Push Notification :"+ response;
+			if(bill.Documents.size() > 0 && bill.Documents != null)
+			{
+				docList = List();
+				for each  docpath in bill.Documents
+				{
+					url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Bills1/" + bill.ID + "/Documents/download?filepath=" + docpath;
+					var = invokeurl
+					[
+						url :url_endpoint
+						type :GET
+						connection:"z_creator"
+					];
+					//info var;
+					var.setParamName("file");
+					docList.add(var);
+				}
+				// 	}
+				// 			if(bill.Documents.size() > 0 && bill.Documents != null)
+				// 			{
+				uploadURL1 = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + billRecID + "/Attached_Bills/upload";
+				billuploadedFileRep = invokeurl
+				[
+					url :uploadURL1
+					type :POST
+					files:docList
+					connection:"z_creator"
+				];
+				info "File uploaded ( Bills ) → " + billuploadedFileRep;
+			}
+			// UPDATIE THE EXPENSE RELATED LINE ITEMS ARE TRUE 
+			for each  assInvItem in request_proceesd_ass_inv_line
+			{
+				lgrAssInv = Requested_Items[ID == assInvItem];
+				lgrAssInv.Expense_Billed=true;
+			}
+		}
+	}
+	all_items_are_billed_expensed = true;
+	for each  reqitm in lgr.Requested_Items
+	{
+		if(reqitm.Expense_Billed != true)
+		{
+			all_items_are_billed_expensed = false;
+			break;
+		}
+	}
+	if(all_items_are_billed_expensed == true)
+	{
+		lgr.Status="Expense / Bill Created";
+		lgr.Logs=lgr.Logs + " Expense / Bill Created By : " + zoho.loginuser + " at : " + zoho.currentdate;
+	}
+}

@@ -1,0 +1,303 @@
+	ftrec = LogiRequest[ID == recID];
+	org = "150000132545";
+	totalItems = 0;
+	createdTrans = 0;
+	allTransactionsDone = false;
+	loc_of_req = ftrec.Location_of_Requester;
+	if(ftrec.Mobilized_Items != null && ftrec.Items_Are_Mobilized == false)
+	{
+		for each  mobItem in ftrec.Mobilized_Items
+		{
+			// 			
+			if(mobItem.Status == "Received" && mobItem.Transaction_Created == false)
+			{
+				totalItems = totalItems + 1;
+				invRec = Inventory_Master[ID == mobItem.Item_Related_ID.toLong()];
+				assetRec = Asset_Master_Entry[ID == mobItem.Item_Related_ID.toLong()];
+				if(invRec.ID != null)
+				{
+					inventoryItem = Inventory_Master[Name == mobItem.Item.toString()].ID;
+					Items = Inventory_Master[Name == mobItem.Item.toString()];
+					//info "Price = :"+ Items.Rate;
+					// 				tranQty = mobItem.QuantityMobilized_Items.Transferred_Stock;
+					// 				this i've changed in below script insated of above one
+					tranQty = ifnull(mobItem.Transferred_Stock.toDecimal(),0);
+					info "transfering qty :" + tranQty;
+					// 				sort by Added_Time desc,PO_date desc
+					fifoRows = FIFO_Stock_Ledger[Item == inventoryItem && Warehouse == mobItem.Source_Location && Stock_In > 0] sort by Batch asc;
+					totalAvailable = 0;
+					totalPrice = 0;
+					remainingQty = tranQty;
+					for each  x in fifoRows
+					{
+						totalAvailable = totalAvailable + x.Stock_In.toDecimal();
+						info "Fifo Rows :" + fifoRows.Batch;
+					}
+					info "items :" + Inventory_Master[ID == inventoryItem].Name + " Total qty :" + totalAvailable;
+					if(tranQty > totalAvailable)
+					{
+						info "Requested quantity (" + tranQty + ") exceeds total available stock (" + totalAvailable + ")";
+					}
+					else
+					{
+						info "The required qty is avilable within this warehouse." + mobItem.Item.toString();
+						remainingQty = tranQty.toDecimal();
+						isFirstRow = true;
+						for each  x in fifoRows
+						{
+							existingStockOut = ifnull(x.Stock_Out,0).toDecimal();
+							availableQty = x.Stock_In.toDecimal() - ifnull(x.Stock_Out,0).toDecimal();
+							if(availableQty <= 0)
+							{
+								continue;
+							}
+							if(remainingQty <= availableQty)
+							{
+								qtyTaken = remainingQty;
+								remainingQty = 0;
+							}
+							else
+							{
+								qtyTaken = availableQty;
+								remainingQty = remainingQty - availableQty;
+							}
+							batchTotalPrice = qtyTaken * x.Unit_Price.toDecimal();
+							newStockOut = existingStockOut + qtyTaken;
+							newRemainingStock = x.Stock_In.toDecimal() - newStockOut;
+							newTotalPrice = ifnull(x.Total_Price,0).toDecimal() + batchTotalPrice;
+							// 						info "Batch :"+ x.Batch;
+							// 						info "Batch total price :"+ batchTotalPrice;
+							// 						info "Stock out :"+ newStockOut;
+							// 						info "Remaining Stock :"+ newRemainingStock;
+							// 						info "After taken total price :"+ newTotalPrice;
+							x.Stock_Out=existingStockOut + qtyTaken.toDecimal();
+							x.Stock_In=newRemainingStock.toDecimal();
+							x.Available_for_Mobilization=newRemainingStock.toNumber();
+							totalPrice = totalPrice + batchTotalPrice;
+							recOb = insert into Transactions
+							[
+								Added_User=zoho.loginuser
+								Inventory_Item=ifnull(inventoryItem,null)
+								Inventory_Master_ID=ifnull(inventoryItem,null)
+								Source_Location=ifnull(mobItem.Source_Location,null)
+								Transaction_Date=zoho.currentdate
+								Transferred_Stock=ifnull(qtyTaken.toDecimal(),0)
+								Source_Stock=ifnull(qtyTaken.toDecimal(),0)
+								Destination_Location=ifnull(mobItem.Destination_Location1,null)
+								Transferred_Quantity=ifnull(qtyTaken.toDecimal(),0)
+								Remarks=ifnull(mobItem.Receiver_Remarks,"")
+								Batch_Count=ifnull(x.Batch,"")
+								Unit_Price=ifnull(x.Unit_Price.toDecimal(),null)
+								PO_Date=ifnull(x.PO_date,null)
+								Total_Price=ifnull(batchTotalPrice,0)
+								Received_Qty=if(isFirstRow,tranQty,0)
+								LogiRequest=ftrec.ID
+							];
+							info "Transaction Added ID :" + recOb;
+							createdTrans = createdTrans + 1;
+							isFirstRow = false;
+							mobItem.Transaction_Created=true;
+							ftTrans = Transactions[ID == recOb];
+							if(ftTrans.Received_Qty.toDecimal() != 0)
+							{
+								allTransactionsDone = true;
+								thisapp.Inventory_testing(ftTrans.ID);
+							}
+							if(remainingQty <= 0)
+							{
+								break;
+							}
+							// 							if(mobItem.Transaction_Created != true)
+							// 							{
+							// 							}
+						}
+						//info "Remaining Qty :" + remainingQty;
+						info "Total Price = " + totalPrice;
+						info "*********************";
+						//itemPrice = ifnull(mobItem.Item_Price,0) * ifnull(mobItem.Quantity,0);
+						itemPrice = totalPrice;
+						if(itemPrice.toNumber() != 0 && mobItem.Quantity != 0 && mobItem.Journals_ID == null || mobItem.Journals_ID == "")
+						{
+							journalmp = Map();
+							journalmp.put("journal_date",zoho.currentdate);
+							journalmp.put("entry_number",ftrec.Request);
+							journalmp.put("reference_number",ftrec.Request);
+							journalmp.put("journal_type","both");
+							journalmp.put("currency_id","1079000000006131");
+							journalmp.put("status","draft");
+							// 							published
+							j_lines = List();
+							sWh = Warehouse[ID == mobItem.Source_Location].Warehouse_Account_Code;
+							debitAcc = Chart_of_Accounts[Account_Code == sWh.toString()].Zoho_Books_ID;
+							dWh = Warehouse[ID == mobItem.Destination_Location1].Warehouse_Account_Code;
+							creditAcc = Chart_of_Accounts[Account_Code == dWh.toString()].Zoho_Books_ID;
+							reportedTagsList = List();
+							if(mobItem.Projects != null)
+							{
+								projectID = Projects[ID == mobItem.Projects].Zoho_Books_ID;
+								getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+								project = getProjects.get("project");
+								// 						j_map.put("project_id",projectID);
+								contractNo = "";
+								for each  ln in project.get("custom_fields")
+								{
+									if(ln.get("field_id") == "1079000002720673")
+									{
+										contractNo = ln.get("value");
+										// 								info "Con No :" + contractNo;
+									}
+								}
+								if(contractNo != "")
+								{
+									getFGContract = zoho.creator.getRecords("m.alsuhaimi_marasah","finance-operations","All_Project_Contracts","",1,200,"z_creator");
+									//info "Contract No Details :"+ getFGContract ;
+									conDate = getFGContract.get("data");
+									tagopID = "";
+									zbid = "";
+									for each  contX in conDate
+									{
+										if(contX.get("Contract_No") == contractNo.toString())
+										{
+											tagopID = contX.get("Tag_Opt_ID");
+											zbid = contX.get("Zoho_Books_ID");
+											break;
+										}
+									}
+									reportedTagMap = Map();
+									reportedTagMap.put("tag_option_id",tagopID);
+									reportedTagMap.put("tag_id",zbid);
+									reportedTagsList.add(reportedTagMap);
+								}
+							}
+							//info "Branch "+mobItem.Branch;
+							if(Branch[ID == mobItem.Branch].Branch_Name == "Haniya Yard")
+							{
+								info "headoffice branch ";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_option_id","1079000000043113");
+								reportedTagMap.put("tag_id","1079000000000510");
+								reportedTagsList.add(reportedTagMap);
+							}
+							else if(Branch[ID == mobItem.Branch].Branch_Name == "Head Office")
+							{
+								info "haniya yard";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_option_id","1079000000043111");
+								reportedTagMap.put("tag_id","1079000000000510");
+								reportedTagsList.add(reportedTagMap);
+							}
+							else if(Branch[ID == mobItem.Branch].Branch_Name == "Abu Maan Yard")
+							{
+								info "Abu Maan Yard";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_option_id","1079000003175766");
+								reportedTagMap.put("tag_id","1079000000000510");
+								reportedTagsList.add(reportedTagMap);
+							}
+							if(Department_Master[ID == mobItem.Department].Department_Name == "Industrial Services Division")
+							{
+								info "industrial service departmet ";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_id","1079000000000512");
+								reportedTagMap.put("tag_option_id","1079000000049065");
+								reportedTagsList.add(reportedTagMap);
+							}
+							else if(Department_Master[ID == mobItem.Department].Department_Name == "Ductwork Department")
+							{
+								info "ductwork department";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_id","1079000000000512");
+								reportedTagMap.put("tag_option_id","1079000000049067");
+								reportedTagsList.add(reportedTagMap);
+							}
+							else if(Department_Master[ID == mobItem.Department].Department_Name == "Administration")
+							{
+								info "Adminstrative Department";
+								reportedTagMap = Map();
+								reportedTagMap.put("tag_id","1079000000000512");
+								reportedTagMap.put("tag_option_id","1079000000073145");
+								reportedTagsList.add(reportedTagMap);
+							}
+							debit = {"account_id":creditAcc,"amount":ifnull(itemPrice,0),"debit_or_credit":"debit","description":Items.Sku + " - " + mobItem.Item.toString(),"tags":reportedTagsList,"project_id":projectID};
+							credit = {"account_id":debitAcc,"amount":ifnull(itemPrice,0),"debit_or_credit":"credit","description":Items.Sku + " - " + mobItem.Item.toString(),"tags":reportedTagsList,"project_id":projectID};
+							j_lines.add(debit);
+							j_lines.add(credit);
+							journalmp.put("line_items",j_lines);
+							journalmp.put("notes","This Transactions For Mobilized Items");
+							params = Map();
+							params.put("JSONString",journalmp);
+							// 			info params;
+							response = invokeurl
+							[
+								url :"https://books.zoho.sa/api/v3/journals?organization_id=" + org
+								type :POST
+								parameters:params
+								connection:"zohobooks1"
+							];
+							info "Journals Created Response :" + response.get("message");
+							if(response.getJSON("journal") != null)
+							{
+								journalID = response.getJSON("journal").get("journal_id");
+								info " Journal posted - ID: " + journalID;
+								//ftrec.Mobilized_Journal_ID=journalID;
+								mobItem.Journals_ID=journalID;
+								allTransactionsDone = true;
+							}
+						}
+					}
+				}
+				else
+				{
+					if(loc_of_req == mobItem.Destination_Location1)
+					{
+						//info "Same location so direct issue voucher required";
+						info "updating location only..";
+						assetRec.Allocated_Location=ifnull(Branch[Branch_Name.contains(mobItem.Destination_Location1.Warehouse_Name)].Branch_Name,null);
+						mobItem.Transaction_Created=true;
+						allTransactionsDone = true;
+					}
+					else
+					{
+						getAssetType = Asset_Type[ID == assetRec.Asset_Type].ID;
+						assMob = insert into Asset_Allocation
+						[
+							Project=ifnull(Projects[ID == mobItem.Projects].ID,null)
+							Asset_Unique_ID=ifnull(assetRec.ID,null)
+							Allocation_Date=mobItem.Received_Date
+							Allocation_Type="Location"
+							Location=ifnull(Branch[Branch_Name.contains(mobItem.Destination_Location1.Warehouse_Name)].ID,null)
+							Asset_Type=ifnull(getAssetType,null)
+							Asset_Name=ifnull(assetRec.Asset_Name,"")
+							Allocation_Date=ifnull(mobItem.Received_Date,zoho.currentdate)
+							Source_Location=ifnull(mobItem.Source_Location.ID,null)
+							LogiRequest=ifnull(ftrec.ID,null)
+							Added_User=zoho.loginuser
+						];
+						info "Asset Mobilized Transactions Created :" + assMob;
+						if(assMob != null || !assMob.isEmpty())
+						{
+							//info ifnull(Branch[Branch_Name.contains(mobItem.Destination_Location1.Warehouse_Name)].Branch_Name,null);
+							assetRec.Allocated_Location=ifnull(Branch[Branch_Name.contains(mobItem.Destination_Location1.Warehouse_Name)].Branch_Name,null);
+							mobItem.Transaction_Created=true;
+							allTransactionsDone = true;
+						}
+					}
+				}
+			}
+			// 			allTransactionsDone = totalItems == createdTrans;
+			if(allTransactionsDone == true)
+			{
+				ftrec.Status="Mobilization Completed";
+				ftrec.Items_Are_Mobilized=true;
+				ftrec.Logs=ftrec.Logs + " \n Items Mobilized By : " + zoho.loginuser + " at : " + zoho.currenttime;
+			}
+			else
+			{
+				info "No criteria matching..";
+			}
+		}
+	}
+	else
+	{
+		info "The Items are already mobilized.";
+	}

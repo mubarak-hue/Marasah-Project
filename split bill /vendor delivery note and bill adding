@@ -1,0 +1,81 @@
+if((input.Vendor_Delivery_Note.size() > 0 && input.Vendor_Delivery_Note != null) || (input.Vendor_Bills.size() > 0 && input.Vendor_Bills != null))
+{
+	ftuser = User_Master[Position == "Chief Accountants" || Position == "Accountants" || Position == "Accounting & Finance Manager"];
+	portalEmail = {};
+	orgEmail = {};
+	for each  user in ftuser
+	{
+		portalEmail.add(user.User_Email);
+		orgEmail.add(user.Organization_Email);
+	}
+	assetDet = Asset_Master_Entry[ID == input.Asset_Name];
+	email = {portalEmail};
+	pushMessage = "Vendor Bills / Delivery Notes for asset " + assetDet.Asset_Name + " (Ref: " + input.Asset_Checklist_Reference + ") have been uploaded. Please proceed with creating the vendor bill from the approved PO (FG).";
+	sub = "Action Required: Create Vendor Bill – " + assetDet.Asset_Name + " (Ref: " + input.Asset_Checklist_Reference + ")";
+	response = zoho.pushNotification(email,sub,pushMessage,"Sheet1_Report1",input.Purchase_Order_Reference.ID);
+	sendmail
+	[
+		from :zoho.adminuserid
+		to :orgEmail
+		subject :sub
+		message :pushMessage
+	]
+	input.Status = "Vendor Bill / Delivery Note Added";
+	input.Logs = input.Logs + "\n Vendor Bills Added By :" + zoho.loginuser + " at :" + zoho.currenttime;
+	getLGPO = Purchase_Order[ID == input.Purchase_Order_Reference.ID];
+	getFGPOID = getLGPO.Purchase_Order1.ID;
+	if(getFGPOID != null)
+	{
+		if(input.Vendor_Delivery_Note.size() > 0 && input.Vendor_Delivery_Note != null)
+		{
+			for each  delNote in input.Vendor_Delivery_Note
+			{
+				getDelNote = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/Asset_Receiving_Inspection_Checklist_Report/" + input.ID + "/Vendor_Delivery_Note/download?filepath=" + delNote;
+				delresp = invokeurl
+				[
+					url :getDelNote
+					type :GET
+					connection:"z_creator"
+				];
+				delresp.setParamName("file");
+				uploadURL = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/Sheet1_Report1/" + getFGPOID + "/Delivery_Note/upload";
+				resp = invokeurl
+				[
+					url :uploadURL
+					type :POST
+					files:delresp
+					connection:"z_creator"
+				];
+				info "Delivery Note uploaded from checklist :" + uploadURL;
+			}
+		}
+		if(input.Vendor_Bills.size() > 0 && input.Vendor_Bills != null)
+		{
+			for each  vbill in input.Vendor_Bills
+			{
+				getVenBill = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/Asset_Receiving_Inspection_Checklist_Report/" + input.ID + "/Vendor_Bills/download?filepath=" + vbill;
+				billResp = invokeurl
+				[
+					url :getVenBill
+					type :GET
+					connection:"z_creator"
+				];
+				billResp.setParamName("file");
+				uploadURL3 = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/Sheet1_Report1/" + getFGPOID + "/Payment_Recipt/upload";
+				resp = invokeurl
+				[
+					url :uploadURL3
+					type :POST
+					files:billResp
+					connection:"z_creator"
+				];
+				info "Vendor Bills uploaded from checklist : " + uploadURL3;
+			}
+		}
+		input.Vendor_docs_Added = true;
+	}
+}
+else
+{
+	openUrl("#Page:Delivery_Notes_Not_added_Alert","popup window");
+}

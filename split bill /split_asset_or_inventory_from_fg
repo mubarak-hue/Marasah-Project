@@ -1,0 +1,360 @@
+void Fixed_Asset.split_bill_desc_details_to_add_masters(int recID)
+{
+	// 	|| account_code == "121001"
+	fixedassetAcc = chartofaccounts[account_code == "121002" || account_code == "121004" || account_code == "121003"];
+	// 	info fixedassetAcc;
+	ListofRec = List();
+	for each  assAcc in fixedassetAcc
+	{
+		// 		info assAcc;
+		ListofRec.add(assAcc);
+	}
+	getWarehouse = zoho.creator.getRecords("m.alsuhaimi_marasah","fixed-assets","All_Warehouses","",1,200,"z_creator");
+	// 	info getWarehouse.get("data");
+	whAccList = List();
+	for each  whlist in getWarehouse.get("data")
+	{
+		whMap = Map();
+		whMap.put("AccountCode",whlist.get("Warehouse_Account_Code"));
+		whMap.put("RecordID",whlist.get("ID"));
+		whAccList.add(whMap);
+	}
+	// 	info ListofRec;
+	ftBill = Bills[ID == recID.toLong()];
+	for each  x in ftBill.Bill_Items
+	{
+		if(!x.Sku.isEmpty() && !x.Description.isEmpty())
+		{
+			info "update qty to inventory items ";
+			getSku = x.Sku.toString();
+			whAccCode = chartofaccounts[ID == x.Account].account_code;
+			// 			getSku = "CON-ABS-0020";
+			response = invokeurl
+			[
+				url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Inventory_Master?criteria=Sku==\"" + getSku + "\""
+				type :GET
+				connection:"z_creator"
+			];
+			// 			info response;
+			if(response.get("code") == 3000)
+			{
+				respData = response.getJSON("data").get(0);
+				invRecID = respData.get("ID");
+				existingTotalPrice = respData.get("Total_Price");
+				//info "Record ID :" + invRecID;
+				//existQty = respData.get("Quantity");
+				rate = respData.get("Rate");
+				// 			    info "Existing Qty :"+ existQty;
+				existQty = x.QTY;
+				itemQty = ifnull(existQty.toNumber(),0) + ifnull(respData.get("Quantity").toNumber(),0);
+				//newPrice = ifnull(itemQty.toNumber(),0) * ifnull(x.Rate,0);
+				newPrice = ifnull(existQty.toDecimal(),0) * ifnull(x.Rate,0);
+				invItemtotalPrice = ifnull(newPrice.toDecimal(),0) + ifnull(rate.toDecimal(),0);
+				info "Total Qty :" + itemQty;
+				// 				info "Total price :" + invItemtotalPrice;
+				dataMap = Map();
+				dataMap.put("Quantity",itemQty.toNumber());
+				// 				dataMap.put("Rate",ifnull(newPrice,0));
+				// 				info "exiting Total :"+ isText(existingTotalPrice);
+				// 				info "Existing Value :" + extval;
+				if(existingTotalPrice.isEmpty())
+				{
+					extval = 0.00;
+				}
+				else
+				{
+					extval = ifnull(existingTotalPrice,0);
+				}
+				// 				info "New price :"+ isText(newPrice);
+				addPrice = ifnull(extval.toDecimal(),0.00) + ifnull(newPrice.toDecimal(),0);
+				info "Total price :" + addPrice;
+				totalVal = (addPrice * 100).toLong() / 100.0;
+				dataMap.put("Total_Price",ifnull(totalVal,0));
+				paramsList = List();
+				paramsList.add(dataMap);
+				payload = Map();
+				payload.put("data",paramsList);
+				// 				info "payload :" + payload;
+				updateResp = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Inventory_Master/" + invRecID
+					type :PATCH
+					parameters:payload.toString()
+					connection:"z_creator"
+				];
+				info "Update response :" + updateResp;
+				if(updateResp.get("code") == 3000)
+				{
+					whRecID = "";
+					for each  x1 in whAccList
+					{
+						if(x1.get("AccountCode") == whAccCode.toString())
+						{
+							whRecID = x1.get("RecordID");
+							break;
+						}
+					}
+					// 				info "Wharehouse Record ID :" + whRecID;
+					searchRec = invokeurl
+					[
+						url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Warehouse_Location_Stocks?criteria=Item.contains(\"" + invRecID + "\") AND Ware_house_Location==\"" + whRecID + "\""
+						type :GET
+						connection:"z_creator"
+					];
+					QtyFromLoc = 0;
+					whID = "";
+					whRecordID = "";
+					for each  srcWh in searchRec.get("data")
+					{
+						if(srcWh.get("Ware_house_Location").get("ID") == whRecID)
+						{
+							QtyFromLoc = ifnull(srcWh.get("Available_Stock"),0);
+							whID = srcWh.get("Ware_house_Location").get("ID");
+							whRecordID = srcWh.get("ID");
+							break;
+						}
+					}
+					// creating FIFO leadger
+					info "Warehouse ID:" + whRecordID;
+					// 					if(whRecordID.isEmpty())
+					// 					{
+					// 						whRecordID = 3694000002100346;
+					// 					}
+					// 					else
+					// 					{
+					// 						whRecordID = whRecordID;
+					// 					}
+					info "Inventory Record ID:" + invRecID;
+					ftRecntstocks = zoho.creator.getRecords("m.alsuhaimi_marasah","fixed-assets","All_FIFO_Stock_Ledgers","Warehouse==" + whRecID + " && Item == " + invRecID,1,200,"z_creator");
+					batchNo = "B1";
+					if(ftRecntstocks.get("data") != null && ftRecntstocks.get("data").size() > 0)
+					{
+						lastBatch = ftRecntstocks.get("data").get(0).get("Batch");
+						// e.g. B3
+						batchNum = lastBatch.remove("B").toNumber() + 1;
+						batchNo = "B" + batchNum;
+					}
+					//toalPric = ifnull(existQty, 0) * ifnull(rate, 0);
+					fifoMap = Map();
+					fifoMap.put("Item",invRecID);
+					fifoMap.put("PO_date",ifnull(ftBill.Bill_date.toString("dd-MMM-yyyy"),null));
+					// 					info "PO Date :"+ftBill.Bill_date;
+					// 					info "Added Date :"+ zoho.currentdate;
+					fifoMap.put("Added_Date",ifnull(zoho.currentdate.toString("dd-MMM-yyyy"),null));
+					temBatchStock = (existQty.toDecimal() * 10000).toLong();
+					finalBatchStock = temBatchStock / 10000.0000;
+					fifoMap.put("Batch_Stock",ifnull(finalBatchStock.toDecimal(),0));
+					temp_stockIn = (existQty.toDecimal() * 10000).toLong();
+					finalStockIn = temp_stockIn / 10000.0000;
+					fifoMap.put("Stock_In",ifnull(finalStockIn.toDecimal(),0));
+					temp = (x.Rate.toDecimal() * 10000).toLong();
+					finalPrice = temp / 10000.0000;
+					fifoMap.put("Unit_Price",ifnull(finalPrice,0));
+					info "Unit Price " + x.Rate.toDecimal();
+					fifoMap.put("Total_Price",(existQty.toDecimal() * x.Rate.toDecimal() * 100).floor() / 100);
+					fifoMap.put("Warehouse",whRecID);
+					fifoMap.put("Batch",batchNo);
+					fifoMap.put("LogiRequest",ifnull(ftBill.LogiRequest,null));
+					payloadMap = Map();
+					payloadList = List();
+					payloadList.add(fifoMap);
+					payloadMap.put("data",payloadList);
+					createFifoLedger = zoho.creator.createRecord("m.alsuhaimi_marasah","fixed-assets","FIFO_Stock_Ledger",fifoMap,Map(),"z_creator");
+					info "FIFO Ledger Created : " + createFifoLedger;
+					info "***********************";
+					info "QtyFromLoc :" + QtyFromLoc;
+					if(createFifoLedger.get("code") == 3000)
+					{
+						//update & create a wh stock 
+						if(QtyFromLoc == 0 && whRecordID != null && whRecordID != "")
+						{
+							totalVal = ifnull(QtyFromLoc.toDecimal(),0) + ifnull(existQty.toDecimal(),0);
+							avilableStock = (totalVal * 100).toLong() / 100.0;
+							info "Warehouse Record ID :" + whRecordID;
+							upstockMap = Map();
+							upstockMap.put("Ware_house_Location",whRecID);
+							upstockMap.put("Available_Stock",ifnull(avilableStock,0.00));
+							upstockMap.put("Item",invRecID);
+							paramsList = List();
+							paramsList.add(upstockMap);
+							payload = Map();
+							payload.put("data",paramsList);
+							// 		info "payload :" + payload;
+							addedStock = invokeurl
+							[
+								url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Warehouse_Location_Stocks/" + whRecordID
+								type :PATCH
+								parameters:payload.toString()
+								connection:"z_creator"
+							];
+							info "Adding new Qty with existing wharehouse :" + addedStock;
+							info "***********************";
+						}
+						else if(QtyFromLoc.toNumber() != 0 && whRecordID != "" || whRecordID != null)
+						{
+							totalVal = ifnull(QtyFromLoc.toDecimal(),0) + ifnull(existQty.toDecimal(),0);
+							avilableStock = (totalVal * 100).toLong() / 100.0;
+							whStockMap = Map();
+							whStockMap.put("Ware_house_Location",whRecID);
+							whStockMap.put("Available_Stock",ifnull(avilableStock,0.00));
+							whStockMap.put("Item",invRecID);
+							paramsList = List();
+							paramsList.add(whStockMap);
+							payload = Map();
+							payload.put("data",paramsList);
+							// 		info "payload :" + payload;
+							updateResp = invokeurl
+							[
+								url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Warehouse_Location_Stocks/" + whRecordID
+								type :PATCH
+								parameters:payload.toString()
+								connection:"z_creator"
+							];
+							info "Increase qty to existing stock:" + updateResp;
+							info "***********************";
+						}
+						else
+						{
+							stockMap = Map();
+							stockMap.put("Ware_house_Location",whRecID);
+							stockMap.put("Available_Stock",ifnull(existQty.toNumber(),0));
+							stockMap.put("Item",invRecID);
+							othermap = Map();
+							createWhStock = zoho.creator.createRecord("m.alsuhaimi_marasah","fixed-assets","Warehouse_Location_Stock",stockMap,othermap,"z_creator");
+							info "Stock Created with New Warehouse :" + createWhStock;
+							info "***********************";
+						}
+					}
+					//end of the script that create and update and add qty to warehouse 
+				}
+			}
+		}
+		else if(!x.Description.isEmpty() && ListofRec.contains(x.Account))
+		{
+			info "add the details to asset master..";
+			vendorBooksID = Vendor[ID == ftBill.Vendor_Name].Zoho_Books_Id;
+			if(!vendorBooksID.isEmpty())
+			{
+				vendorRelatedID = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Vendor_Report?criteria=Zoho_Books_Id==\"" + vendorBooksID + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+vendorRelatedID;
+				searchedVendor = vendorRelatedID.get("data").get(0);
+				searchedVendorID = searchedVendor.get("ID");
+			}
+			assetAcc = chartofaccounts[ID == x.Account].account_name;
+			if(assetAcc != null || assetAcc != "")
+			{
+				// 				info assetAcc;
+				assetRelatedAcc = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Asset_Sub_Categories?criteria=Asset_Type.contains(\"" + assetAcc + "\")"
+					type :GET
+					connection:"z_creator"
+				];
+				// 				info "Vendor:"+assetRelatedAcc;
+				assetRelatedData = assetRelatedAcc.get("data").get(0);
+				assetTypeID = assetRelatedData.get("ID");
+			}
+			// 			department 
+			if(!x.Department.isEmpty())
+			{
+				dep = "";
+				if(x.Department == "Administration Department")
+				{
+					dep = "Administration";
+				}
+				else if(x.Department == "Ductwork Department")
+				{
+					dep = "Ductwork Department";
+				}
+				else if(x.Department == "Industrial Service Department")
+				{
+					dep = "Industrial Services Division";
+				}
+				depRelatedRec = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Department_Masters?criteria=Department_Name==\"" + dep + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+assetRelatedAcc;
+				depRelatedData = depRelatedRec.get("data").get(0);
+				depRecID = depRelatedData.get("ID");
+			}
+			// 			projects
+			if(x.Project != null)
+			{
+				ftProjectID = Projects[ID == x.Project].Zoho_Books_ID;
+				projectRelRec = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Projects?criteria=Zoho_Books_ID==\"" + ftProjectID + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+assetRelatedAcc;
+				projRelData = projectRelRec.get("data").get(0);
+				projectID = projRelData.get("ID");
+			}
+			// 			Tax 
+			if(x.Tax != null)
+			{
+				taxVal = "";
+				taxAmount = 0;
+				if(x.Tax == "Standard Rate - 15%")
+				{
+					taxVal = "Standard Rate [ 15% ]";
+					taxcal = ifnull(x.Rate,0) * 15 / 100;
+					taxAmount = (taxcal * 100).floor() / 100.0;
+				}
+				else if(x.Tax == "Zero Rate - 0")
+				{
+					taxVal = "Standard Rate 0";
+					taxAmount = 0;
+				}
+			}
+			assetMasterDetails = Map();
+			assetMasterDetails.put("Vendor_Name1",ifnull(searchedVendorID,null));
+			assetMasterDetails.put("Asset_Name",x.Description);
+			assetMasterDetails.put("Asset_Type",ifnull(assetTypeID,null));
+			assetMasterDetails.put("Purchase_Value1",x.Rate);
+			assetMasterDetails.put("Purchase_Date",ftBill.Bill_date.toDate());
+			assetMasterDetails.put("Asset_Location1",ifnull(depRecID,null));
+			// 			assetMasterDetails.put("Project",ifnull(projectID,null));
+			// 			assetMasterDetails.put("Allocated_Location",x.Branch.toString());
+			assetMasterDetails.put("VAT_Percentage",taxVal);
+			assetMasterDetails.put("VAT_Amount",taxAmount.toString("0.00"));
+			assetMasterDetails.put("Asset_Status","Non - Depreciation");
+			assetMasterDetails.put("Approval_Status","Draft");
+			assetMasterDetails.put("Logs","From LogiRequest — created by :" + ftBill.Added_User + " on " + zoho.currenttime);
+			paramsMap = Map();
+			paramsList = List();
+			paramsList.add(assetMasterDetails);
+			skipWorkflowList = List();
+			skipWorkflowList.add("form_workflow");
+			paramsMap.put("data",paramsList);
+			paramsMap.put("skip_workflow",skipWorkflowList);
+			// 			info "asset Map :"+ paramsMap;
+			CreateNewAsset = invokeurl
+			[
+				url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/form/Asset_Master_Entry"
+				type :POST
+				parameters:paramsMap.toString()
+				connection:"z_creator"
+			];
+			info "Create Asset Resp :" + CreateNewAsset;
+		}
+		else if(!x.Description.isEmpty() && x.Bill_Items.Add_this_item_as_an_Asset == true && x.Asset_Type != null)
+		{
+			accType = chartofaccounts[ID == x.Asset_Type].account_code;
+			getAccCode = ListofRec.contains(accType);
+		}
+		else
+		{
+			info "No items match with the masters..";
+		}
+	}
+}

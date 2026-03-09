@@ -347,10 +347,122 @@ void Fixed_Asset.split_bill_desc_details_to_add_masters(int recID)
 			];
 			info "Create Asset Resp :" + CreateNewAsset;
 		}
-		else if(!x.Description.isEmpty() && x.Bill_Items.Add_this_item_as_an_Asset == true && x.Asset_Type != null)
+		else if(!x.Description.isEmpty() && x.Add_this_item_as_an_Asset == true && x.Asset_Type != null)
 		{
-			accType = chartofaccounts[ID == x.Asset_Type].account_code;
-			getAccCode = ListofRec.contains(accType);
+			accType = chartofaccounts[ID == x.Asset_Type].account_name;
+			if(accType != null || accType != "")
+			{
+				// 				info assetAcc;
+				assetRelatedAcc = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Asset_Sub_Categories?criteria=Asset_Type.contains(\"" + accType + "\")"
+					type :GET
+					connection:"z_creator"
+				];
+				// 				info "Vendor:"+assetRelatedAcc;
+				assetRelatedData = assetRelatedAcc.get("data").get(0);
+				assetTypeID = assetRelatedData.get("ID");
+			}
+			vendorBooksID = Vendor[ID == ftBill.Vendor_Name].Zoho_Books_Id;
+			if(!vendorBooksID.isEmpty())
+			{
+				vendorRelatedID = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Vendor_Report?criteria=Zoho_Books_Id==\"" + vendorBooksID + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+vendorRelatedID;
+				searchedVendor = vendorRelatedID.get("data").get(0);
+				searchedVendorID = searchedVendor.get("ID");
+			}
+			// 			department 
+			if(!x.Department.isEmpty())
+			{
+				dep = "";
+				if(x.Department == "Administration Department")
+				{
+					dep = "Administration";
+				}
+				else if(x.Department == "Ductwork Department")
+				{
+					dep = "Ductwork Department";
+				}
+				else if(x.Department == "Industrial Service Department")
+				{
+					dep = "Industrial Services Division";
+				}
+				depRelatedRec = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Department_Masters?criteria=Department_Name==\"" + dep + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+assetRelatedAcc;
+				depRelatedData = depRelatedRec.get("data").get(0);
+				depRecID = depRelatedData.get("ID");
+			}
+			// 			projects
+			if(x.Project != null)
+			{
+				ftProjectID = Projects[ID == x.Project].Zoho_Books_ID;
+				projectRelRec = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Projects?criteria=Zoho_Books_ID==\"" + ftProjectID + "\""
+					type :GET
+					connection:"z_creator"
+				];
+				// 			info "Vendor:"+assetRelatedAcc;
+				projRelData = projectRelRec.get("data").get(0);
+				projectID = projRelData.get("ID");
+			}
+			// 			Tax 
+			if(x.Tax != null)
+			{
+				taxVal = "";
+				taxAmount = 0;
+				if(x.Tax == "Standard Rate - 15%")
+				{
+					taxVal = "Standard Rate [ 15% ]";
+					taxcal = ifnull(x.Rate,0) * 15 / 100;
+					taxAmount = (taxcal * 100).floor() / 100.0;
+				}
+				else if(x.Tax == "Zero Rate - 0")
+				{
+					taxVal = "Standard Rate 0";
+					taxAmount = 0;
+				}
+			}
+			assetMasterDetails = Map();
+			assetMasterDetails.put("Vendor_Name1",ifnull(searchedVendorID,null));
+			assetMasterDetails.put("Asset_Name",x.Description);
+			assetMasterDetails.put("Asset_Type",ifnull(assetTypeID,null));
+			assetMasterDetails.put("Purchase_Value1",x.Rate);
+			assetMasterDetails.put("Purchase_Date",ftBill.Bill_date.toDate());
+			assetMasterDetails.put("Asset_Location1",ifnull(depRecID,null));
+			// 			assetMasterDetails.put("Project",ifnull(projectID,null));
+			// 			assetMasterDetails.put("Allocated_Location",x.Branch.toString());
+			assetMasterDetails.put("VAT_Percentage",taxVal);
+			assetMasterDetails.put("VAT_Amount",taxAmount.toString("0.00"));
+			assetMasterDetails.put("Asset_Status","Non - Depreciation");
+			assetMasterDetails.put("Approval_Status","Draft");
+			assetMasterDetails.put("Logs","From LogiRequest — created by :" + ftBill.Added_User + " on " + zoho.currenttime);
+			paramsMap = Map();
+			paramsList = List();
+			paramsList.add(assetMasterDetails);
+			skipWorkflowList = List();
+			skipWorkflowList.add("form_workflow");
+			paramsMap.put("data",paramsList);
+			paramsMap.put("skip_workflow",skipWorkflowList);
+			// 			info "asset Map :"+ paramsMap;
+			CreateNewAsset = invokeurl
+			[
+				url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/form/Asset_Master_Entry"
+				type :POST
+				parameters:paramsMap.toString()
+				connection:"z_creator"
+			];
+			info "Create Asset Resp :" + CreateNewAsset;
 		}
 		else
 		{

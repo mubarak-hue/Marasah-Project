@@ -1,0 +1,32 @@
+vatRegFile = invokeUrl
+				[
+				url: "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Customer_Report/"+ch.ID+"/VAT_Registration_Certificate/upload"
+				type: POST
+				connection: "za_connections"
+				files: vat_reg_file
+				];
+				info "VAT Registration file :"+ vatRegFile;
+				iban_file_resp = invokeUrl
+				[
+				url: "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Customer_Report/"+ch.ID+"/IBAN_Certificate/upload"
+				type: POST
+				connection: "za_connections"
+				files: ibanfiles
+				];
+				info "iban_file_resp :"+ iban_file_resp;
+				cr_file_resp = invokeUrl
+				[
+				url: "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Customer_Report/"+ch.ID+"/CR_Certificate/upload"
+				type: POST
+				connection: "za_connections"
+				files: cr_file
+				];
+				info "cr_file_resp :"+ cr_file_resp;
+				National_Address_Certificate_resp = invokeUrl
+				[
+				url: "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Customer_Report/"+ch.ID+"/National_Address_Certificate/upload"
+				type: POST
+				connection: "za_connections"
+				files: nat_cert
+				];
+				info "National_Address_Certificate_resp :"+ National_Address_Certificate_resp;

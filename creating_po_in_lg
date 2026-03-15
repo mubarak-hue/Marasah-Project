@@ -1,0 +1,77 @@
+input.Logs = input.Logs + " \n Created by :" + zoho.loginuser + " at :" + zoho.currenttime;
+lgReq = LogiRequest[ID == input.LogiRequest1];
+// ftUsers = User_Master[Position == "Accountants"].User_Email;
+// email = {ftUsers};
+// pushMessage = "Request " + input.Purchase_order + " has been created and requires verification. Please review and approve this purchase order.";
+// sub = "Purchase Order " + input.Purchase_order + " Created";
+// response = zoho.pushNotification(email,sub,pushMessage,"Accountant_Approval1",input.ID);
+ftUser = User_Master[Position == "GM"];
+email = {ftUser.User_Email};
+pushMessage = "BSCR has initiated the Purchase Order for Request " + lgReq.Request + ". Awaiting GM review and approval.";
+sub = "Purchase Order – Awaiting GM Approval: " + lgReq.Request;
+response = zoho.pushNotification(email,sub,pushMessage,"LogiRequest___GM_Approval",lgReq.ID);
+sendmail
+[
+	from :zoho.adminuserid
+	to :ftUser.Organization_Email
+	subject :sub
+	message :pushMessage
+]
+// if(ftLogiRequest.Purchase_Orders != null)
+// {
+if(input.LogiRequest1 != null)
+{
+	ftLogiRequest = LogiRequest[ID == input.LogiRequest1];
+	// ftLogiRequest.Status = "Initiated PO";
+	ftLogiRequest.Purchase_Orders=input.ID;
+	ftLogiRequest.Status="Initiated PO";
+	if(input.Payment_Terms != "Due on Receipt")
+	{
+		ftLogiRequest.Vendor_Purchase_Required=false;
+		ftLogiRequest.Credit_purchase=true;
+	}
+}
+if(input.Asset_Receiving_Inspection_Checklist != null)
+{
+	getChecklistRec = Asset_Receiving_Inspection_Checklist[ID == input.Asset_Receiving_Inspection_Checklist];
+	getChecklistRec.Purchase_Order_Reference=input.ID;
+	if(input.GPS_PO == true)
+	{
+		getChecklistRec.Status="GPS PO Initiated";
+		for each  item in input.Map_PO_to_Checklist
+		{
+			getCkLst = Asset_Receiving_Inspection_Checklist[ID == item];
+			getCkLst.Purchase_Order_Reference=input.ID;
+			getCkLst.Prepare_Purchase_Order_for_GPS="Created";
+			// 			if(getCkLst.Apply_Insurance == true && getCkLst.Upload_Insurance_bill.size()>0)
+			// 			{
+			// 				getCkLst.Status = ""
+			// 			}
+			getCkLst.Attach_GPS_Quotation=ifnull(getChecklistRec.Attach_GPS_Quotation,{});
+			if(getCkLst.Completed_On20 == null)
+			{
+				getCkLst.Completed_On20=zoho.currentdate;
+			}
+		}
+		assetMaster = Asset_Master_Entry[ID == getChecklistRec.Asset_Name];
+		assetMaster.Purchase_Order=input.ID;
+	}
+	else if(input.Insurance_PO == true)
+	{
+		getChecklistRec.Status="Insurance PO Initiated";
+		for each  item in input.Map_PO_to_Checklist
+		{
+			getCkLst = Asset_Receiving_Inspection_Checklist[ID == item];
+			getCkLst.Purchase_Order_Reference=input.ID;
+			getCkLst.Purchase_Order_Reference_Insurance="Created";
+			// 			getCkLst.Attach_GPS_Quotation=ifnull(getChecklistRec.Attach_GPS_Quotation,{});
+			if(getCkLst.Completed_On20 == null)
+			{
+				getCkLst.Completed_On20=zoho.currentdate;
+			}
+		}
+		assetMaster = Asset_Master_Entry[ID == getChecklistRec.Asset_Name];
+		assetMaster.Purchase_Order=input.ID;
+	}
+}
+input.Status = "Pending";

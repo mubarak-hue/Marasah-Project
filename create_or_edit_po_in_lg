@@ -1,0 +1,35 @@
+// new version 
+ftPO = Purchase_Order[ID == input.ID];
+ftLogiRequest = LogiRequest[ID == input.LogiRequest1];
+ftUser = User_Master[Position == "GM" || Position == "CEO"];
+userList = List();
+for each  val in ftUser
+{
+	userList.add(val.User_Email);
+}
+if(userList.contains(zoho.loginuserid))
+{
+	// 	thisapp.create_po_to_FG(input.ID);
+	collectCheckList = Asset_Receiving_Inspection_Checklist[ID == ftPO.Asset_Receiving_Inspection_Checklist.ID];
+	if(collectCheckList.ID != null && collectCheckList.ID != 0)
+	{
+		collectCheckList.Status="PO Approved By GM";
+		openUrl("#Report:Checklist_GM","same window");
+	}
+	else
+	{
+		ftLogiRequest = LogiRequest[ID == input.LogiRequest1];
+		ftLogiRequest.Logs=ftLogiRequest.Logs + "\n PO Approved By :" + zoho.loginuser + " at :" + zoho.currenttime;
+		ftLogiRequest.Purchase_Orders=input.ID;
+		ftLogiRequest.Status="PO Approved By GM";
+		input.Status = "GM Approved";
+		openUrl("#Report:LogiRequest___GM_Approval","same window");
+	}
+}
+else
+{
+	// 	input.Status = "Revised";
+	// 	input.Status = "Pending";
+	ftLogiRequest.Status="Initiated PO";
+	openUrl("#Report:Quotation_Request","same window");
+}

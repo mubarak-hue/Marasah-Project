@@ -1,0 +1,316 @@
+lgReq = LogiRequest[ID == lgID];
+	journalRequired = false;
+	transactions_created = true;
+	createJournals = false;
+	org = "150000132545";
+	jrnlMap = Map();
+	jrnlMap.put("reference_number",lgReq.Request.toString());
+	jrnlMap.put("status","draft");
+	linelist = List();
+	issuedItems = List();
+	for each  issVh in lgReq.Issue_Voucher1
+	{
+		issuvhSubForm = Issue_Voucher_Items_Assets[ID == issVh.ID];
+		if(issVh.Transactions_Created == false)
+		{
+			issuedDate = issuvhSubForm.Issue_Date;
+			// -------- ASSET PROCESSING --------
+			if(issuvhSubForm.Asset != null)
+			{
+				assetMaster = Asset_Master_Entry[ID == issuvhSubForm.Asset];
+				if(assetMaster == null)
+				{
+					transactions_created = false;
+					info "Asset not found";
+				}
+				else
+				{
+					assetMaster.Project=ifnull(issuvhSubForm.Project.ID,null);
+					if(issuvhSubForm.Branch != null)
+					{
+						getBranch = Branch[ID == issuvhSubForm.Branch].Branch_Name;
+						wh = Warehouse[ID != 0];
+						matchedName = "";
+						for each  det in wh
+						{
+							if(det.Warehouse_Name.toLowerCase().contains(getBranch.toLowerCase()))
+							{
+								matchedName = det.Warehouse_Name;
+								break;
+							}
+						}
+						assetMaster.Allocated_Location=matchedName;
+					}
+					if(issuvhSubForm.Department != null)
+					{
+						assetMaster.Asset_Location1=Department_Master[ID == issuvhSubForm.Department].ID;
+					}
+					issuvhSubForm.Transactions_Created=true;
+				}
+				info "Asset issued successfully";
+			}
+			// -------- INVENTORY PROCESSING --------
+			else if(issuvhSubForm.Inventory_Item != null)
+			{
+				journalRequired = true;
+				invMaster = Inventory_Master[ID == issuvhSubForm.Inventory_Item];
+				choosenQty = issuvhSubForm.Issued_Quantity.toDecimal();
+				if(invMaster == null)
+				{
+					transactions_created = false;
+					info "Inventory item not found";
+					continue;
+				}
+				// info "Warehouse from line :"+ issuvhSubForm.Warehouse;
+				whLocID = Warehouse[ID == issuvhSubForm.Warehouse];
+				// info "warehouse ID :"+ whLocID;
+				fifoRows = Transactions[Inventory_Item == invMaster.ID && Destination_Location == whLocID.ID && Source_Stock > 0] sort by Batch_Count asc;
+				//fifoRows = FIFO_Stock_Ledger[Item == invMaster && Warehouse == whLocID.ID &&  Stock_In > 0]sort by Batch asc;
+				// 				info invMaster.Name;
+				// info "Transfered Qty :" + fifoRows.ID;
+				totalAvailable = 0;
+				stock_taken_batches = List();
+				for each  x in fifoRows
+				{
+					totalAvailable = totalAvailable + ifnull(x.Source_Stock,0);
+				}
+				if(choosenQty > totalAvailable)
+				{
+					transactions_created = false;
+					info "Insufficient stock :" + invMaster.Name;
+					continue;
+				}
+				remainingQty = choosenQty;
+				totalItemPrice = 0;
+				for each  batch in fifoRows
+				{
+					if(remainingQty <= 0)
+					{
+						break;
+					}
+					if(batch.Source_Stock > 0)
+					{
+						// ===== ADDED PRICE CHECK (SAFE) =====
+						if(batch.Unit_Price == null || batch.Unit_Price <= 0)
+						{
+							transactions_created = false;
+							info "Unit price missing for inventory batch";
+							break;
+						}
+						// ===================================
+						if(batch.Source_Stock >= remainingQty)
+						{
+							qtyToTake = remainingQty;
+						}
+						else
+						{
+							qtyToTake = batch.Source_Stock;
+						}
+						batchTotal = qtyToTake * batch.Unit_Price;
+						totalItemPrice = totalItemPrice + batchTotal;
+						batch.Source_Stock=batch.Source_Stock - qtyToTake;
+						batch.Stock_Out=ifnull(batch.Stock_Out,0) + qtyToTake;
+						stock_taken_batches.add(batch.Batch_Count);
+						// 						updating the qty on invenotry master with total price	
+						// 						info "Batch Warehouse ID :"+ batch.Destination_Location;
+						wharehouse_lc_stock = Warehouse_Location_Stock[Ware_house_Location == batch.Destination_Location && Item == invMaster];
+						// 						info wharehouse_lc_stock.Available_Stock;
+						info "********************";
+						if(wharehouse_lc_stock != null)
+						{
+							whqty_after_consumed = wharehouse_lc_stock.Available_Stock - qtyToTake.toDecimal();
+							wharehouse_lc_stock.Available_Stock=whqty_after_consumed.toDecimal();
+						}
+						else
+						{
+							info "Warehouse stock record missing";
+						}
+						remainingQty = remainingQty - qtyToTake;
+					}
+				}
+				if(remainingQty > 0 || totalItemPrice <= 0)
+				{
+					transactions_created = false;
+					info "FIFO or pricing issue detected";
+					continue;
+				}
+				invMaster.Quantity=(invMaster.Quantity.toDecimal() - choosenQty).toString();
+				invMaster.Total_Price=invMaster.Rate * invMaster.Quantity.toDecimal();
+				// 				invMaster.Total_Price = totalItemPrice;
+				info "Inventory Qty After :" + invMaster.Quantity + " - total price :" + invMaster.Total_Price;
+				// 				create_stock_record 
+				create_stock_rec = insert into All_Inventory_Items_Movement
+				[
+					Date_field=issuvhSubForm.Issue_Date
+					Batch=stock_taken_batches
+					Record_Type="Issued"
+					Stock_Out1=ifnull(issuvhSubForm.Issued_Quantity,0.00)
+					Source_Warehouse=ifnull(issuvhSubForm.Warehouse,null)
+					Stock_Unit_Price=ifnull(totalItemPrice,0.00)
+					Logirequest1=ifnull(lgReq.ID,null)
+					Added_User=zoho.loginuser
+				];
+				// ====== JOURNAL LINES ======
+				if(totalItemPrice > 0)
+				{
+					createJournals = true;
+					reportedTagsList = List();
+					debitAcc = "1079000000014547";
+					creditAcc = Chart_of_Accounts[Account_Code == whLocID.Warehouse_Account_Code].Zoho_Books_ID;
+					if(issuvhSubForm.Project != null)
+					{
+						projectID = Projects[ID == issuvhSubForm.Project].Zoho_Books_ID;
+						getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+						project = getProjects.get("project");
+						contractNo = "";
+						for each  ln in project.get("custom_fields")
+						{
+							if(ln.get("field_id") == "1079000002720673")
+							{
+								contractNo = ln.get("value");
+								// 								info "Con No :" + contractNo;
+							}
+						}
+						if(contractNo != "")
+						{
+							getFGContract = zoho.creator.getRecords("m.alsuhaimi_marasah","finance-operations","All_Project_Contracts","",1,200,"z_creator");
+							//info "Contract No Details :"+ getFGContract ;
+							conDate = getFGContract.get("data");
+							tagopID = "";
+							zbid = "";
+							for each  contX in conDate
+							{
+								if(contX.get("Contract_No") == contractNo.toString())
+								{
+									tagopID = contX.get("Tag_Opt_ID");
+									zbid = contX.get("Zoho_Books_ID");
+									break;
+								}
+							}
+							reportedTagMap = Map();
+							reportedTagMap.put("tag_option_id",tagopID);
+							reportedTagMap.put("tag_id",zbid);
+							reportedTagsList.add(reportedTagMap);
+						}
+					}
+					if(Department_Master[ID == issuvhSubForm.Department].Department_Name == "Industrial Services Division")
+					{
+						info "industrial service departmet ";
+						reportedTagMap = Map();
+						reportedTagMap.put("tag_id","1079000000000512");
+						reportedTagMap.put("tag_option_id","1079000000049065");
+						reportedTagsList.add(reportedTagMap);
+					}
+					else if(Department_Master[ID == issuvhSubForm.Department].Department_Name == "Ductwork Department")
+					{
+						info "ductwork department";
+						reportedTagMap = Map();
+						reportedTagMap.put("tag_id","1079000000000512");
+						reportedTagMap.put("tag_option_id","1079000000049067");
+						reportedTagsList.add(reportedTagMap);
+					}
+					else if(Department_Master[ID == issuvhSubForm.Department].Department_Name == "Administration")
+					{
+						info "Adminstrative Department";
+						reportedTagMap = Map();
+						reportedTagMap.put("tag_id","1079000000000512");
+						reportedTagMap.put("tag_option_id","1079000000073145");
+						reportedTagsList.add(reportedTagMap);
+					}
+					if(issuvhSubForm.Branch != null)
+					{
+						if(Branch[ID == issuvhSubForm.Branch].Branch_Name == "Haniya Yard")
+						{
+							info "headoffice branch ";
+							reportedTagMap = Map();
+							reportedTagMap.put("tag_option_id","1079000000043113");
+							reportedTagMap.put("tag_id","1079000000000510");
+							reportedTagsList.add(reportedTagMap);
+						}
+						else if(Branch[ID == issuvhSubForm.Branch].Branch_Name == "Head Office")
+						{
+							info "haniya yard";
+							reportedTagMap = Map();
+							reportedTagMap.put("tag_option_id","1079000000043111");
+							reportedTagMap.put("tag_id","1079000000000510");
+							reportedTagsList.add(reportedTagMap);
+						}
+						else if(Branch[ID == issuvhSubForm.Branch].Branch_Name == "Abu Maan Yard")
+						{
+							info "Abu Maan Yard";
+							reportedTagMap = Map();
+							reportedTagMap.put("tag_option_id","1079000003175766");
+							reportedTagMap.put("tag_id","1079000000000510");
+							reportedTagsList.add(reportedTagMap);
+						}
+					}
+					debit = {"account_id":debitAcc,"amount":totalItemPrice,"debit_or_credit":"debit","description":invMaster.Name,"tags":reportedTagsList,"project_id":projectID};
+					credit = {"account_id":creditAcc,"amount":totalItemPrice,"debit_or_credit":"credit","description":invMaster.Name,"tags":reportedTagsList,"project_id":projectID};
+					linelist.add(debit);
+					linelist.add(credit);
+					jrnlMap.put("journal_date",issuvhSubForm.Issue_Date);
+					issuedItems.add(issuvhSubForm.ID);
+				}
+				else
+				{
+					// No financial impact, but stock updated successfully
+					issuvhSubForm.Transactions_Created=true;
+					info "Inventory issued without financial impact";
+				}
+			}
+			else
+			{
+				info "The asset / Item already issued";
+			}
+		}
+	}
+	if(linelist.size() > 0 && createJournals == true)
+	{
+		jrnlMap.put("line_items",linelist);
+		jrnlMap.put("notes","Issue Voucher journal");
+		params = Map();
+		params.put("JSONString",jrnlMap);
+		response = invokeurl
+		[
+			url :"https://books.zoho.sa/api/v3/journals?organization_id=" + org
+			type :POST
+			parameters:params
+			connection:"zohobooks1"
+		];
+		if(response != null && response.get("code") == 0)
+		{
+			info response.get("message");
+			info response.getJSON("journal").get("journal_id");
+			for each  issuItem in issuedItems
+			{
+				issueVh = Issue_Voucher_Items_Assets[ID == issuItem];
+				issueVh.Journal_ID=response.getJSON("journal").get("journal_id");
+				issueVh.Transactions_Created=true;
+			}
+			// 		issuvhSubForm.Journal_ID=
+			// 		is/suvhSubForm.Transactions_Created=true;
+		}
+		else
+		{
+			transactions_created = false;
+			for each  issueTrans in issuedItems
+			{
+				issueVh1 = Issue_Voucher_Items_Assets[ID == issueTrans];
+				issueVh1.Transactions_Created=false;
+			}
+			// 			issuvhSubForm.Transactions_Created=false;
+			info "Journal creation failed";
+		}
+	}
+	// 	===== FINAL STATUS UPDATE =====
+	if(transactions_created == true)
+	{
+		lgReq.Status="Issued";
+		info "Issue Voucher Approved";
+	}
+	else
+	{
+		lgReq.Status="Mobilization Completed";
+		//      lgReq.Status="Delivered";
+		info "Issue Voucher Held";
+	}

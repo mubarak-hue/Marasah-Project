@@ -1,0 +1,47 @@
+void Inventory_testing(int recID)
+{
+	trans = Transactions[ID == recID];
+	ftRelTran = Transactions[ID != 0 && Inventory_Item == trans.Inventory_Item && Destination_Location == trans.Destination_Location];
+	actQty = 0;
+	for each  x in ftRelTran
+	{
+		transQty = ifnull(x.Received_Qty.toDecimal(),0);
+		actQty = actQty + transQty;
+	}
+	// 	info "Actual Transfered Qty :" + actQty;
+	// 	reduceing qty to source location 
+	transferQty = ifnull(trans.Received_Qty.toDecimal(),0);
+	srcStock = Warehouse_Location_Stock[Ware_house_Location == trans.Source_Location && Item == trans.Inventory_Item];
+	// 	info "SourceQty :"+srcStock.Available_Stock;
+	if(srcStock.ID != null)
+	{
+		existingQty = max(srcStock.Available_Stock,0);
+		newSrcQty = existingQty - transferQty;
+		srcStock.Available_Stock=newSrcQty;
+	}
+	else
+	{
+		OpeningStock = Inventory_Master[ID == trans.Inventory_Item].Quantity;
+		// 		newSrcQty = existingQty - transferQty;
+		srcStock.Available_Stock=OpeningStock;
+	}
+	// 	adding qty to destination location 
+	relLoc = Warehouse_Location_Stock[Ware_house_Location == trans.Destination_Location && Item == trans.Inventory_Item];
+	if(relLoc.ID != null)
+	{
+		ftWh = Warehouse_Location_Stock[ID == relLoc.ID];
+		// 		info "Aval Stock :"+ ftWh.Available_Stock +" - "+ Inventory_Master[ID == ftWh.Item].Name;
+		ftWh.Available_Stock=transferQty;
+	}
+	else
+	{
+		addRec = insert into Warehouse_Location_Stock
+		[
+			Added_User=zoho.loginuser
+			Ware_house_Location=trans.Destination_Location
+			Available_Stock=trans.Received_Qty.toDecimal()
+			Item=trans.Inventory_Item
+		];
+		// 		info "Qty Added:"+addRec;
+	}
+}

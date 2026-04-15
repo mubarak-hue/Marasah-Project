@@ -1,0 +1,68 @@
+organizationID = organization.get("organization_id");
+jrnlID = "1079000002145179";
+projectList = zoho.books.getRecords("projects",organizationID,"","books");
+prjcts = projectList.get("projects");
+projectDetailList = List();
+for each  prt in prjcts
+{
+	pmap = Map();
+	pmap.put("projectID",prt.get("project_id"));
+	pmap.put("projectCode",prt.get("project_code"));
+	pmap.put("ProjectName",prt.get("project_name"));
+	pmap.put("projectTagName",prt.get("project_name") + " - " + prt.get("project_name"));
+	projectDetailList.add(pmap);
+}
+// info "All project List :"+ projectDetailList;
+getJrnl = zoho.books.getRecordsByID("journals",organizationID,jrnlID,"books");
+// // info getJrnl;
+jrl = getJrnl.get("journal");
+getJrnlID = jrl.get("journal_id");
+li = jrl.get("line_items");
+// // info li ;
+LineItems = List();
+for each  det in li
+{
+	lineMap = Map();
+	tagsDet = det.get("tags");
+	for each  lineTags in tagsDet
+	{
+		if(lineTags.get("tag_id") == "1079000000000518")
+		{
+			tagOptionName = lineTags.get("tag_option_name");
+			//         info "Tag Option Name :"+ tagOptionName;
+			//         for each prj in projectDetailList
+			//         {
+			//             projectName = prj.get("projectTagName");
+			//             tagName = tagOptionName.toString();
+			//             if(projectName == tagName)
+			//             {
+			// 				info "Project Name :" + projectName;
+			// 				info "Tag Name :"+ tagName;
+			//                 lineMap.put("line_id",det.get("line_id"));
+			//                 lineMap.put("project_id", prj.get("projectID"));
+			//                 LineItems.add(lineMap);
+			//             }
+			//         }
+			prjtID = "";
+			if(tagOptionName == "Qurrayah Power Plant - ISD-2024-4")
+			{
+				prjtID = "1079000000044161";
+			}
+			else if(tagOptionName == "MCL-2025-47 - Eteche 2025001251 - MCL-2025-47")
+			{
+				prjtID = "1079000001327233";
+			}
+			lineMap.put("line_id",det.get("line_id"));
+			lineMap.put("debit_or_credit",det.get("debit_or_credit"));
+			lineMap.put("amount",det.get("amount"));
+			lineMap.put("project_id",prjtID);
+			LineItems.add(lineMap);
+		}
+	}
+}
+// info "Line Items :"+ LineItems;
+paramsMap = Map();
+paramsMap.put("line_items",LineItems);
+// info paramsMap;
+updateJrnl = zoho.books.updateRecord("journals",organizationID,jrnlID,paramsMap,"books");
+info updateJrnl;

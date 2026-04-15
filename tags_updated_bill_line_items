@@ -1,0 +1,201 @@
+organizationID = organization.get("organization_id");
+// getAllBills = invokeurl
+// [
+// 	url :"https://www.zohoapis.sa/books/v3/bills?organization_id=" + organizationID + "&page=13&per_page=25&search_criteria={date_start:2025-01-01,date_end:2025-09-14}&sort_column=created_time&sort_order=D"
+// 	type :GET
+// 	connection:"books"
+// ];
+// info "Get All Bills :"+ getAllBills;
+// getBills = getAllBills.get("bills");
+// info getBills.size();
+contractNoList = List();
+branchList = List();
+departmentList = List();
+x = invokeurl
+[
+	url :"https://books.zoho.sa/api/v3/settings/tags?organization_id=" + organizationID
+	type :GET
+	connection:"books"
+];
+// info x;
+tags = x.get("reporting_tags");
+tagOptions = List();
+for each  tag in tags
+{
+	if(tag.get("tag_id") == "1079000000000520")
+	{
+		// 		contractNo tags 
+		tagDet = invokeurl
+		[
+			url :"https://books.zoho.sa/api/v3/settings/tags/" + tag.get("tag_id") + "?organization_id=" + organizationID
+			type :GET
+			connection:"books"
+		];
+		//info "Tag Details :" + tagDet;
+		allTags = tagDet.get("reporting_tag");
+		for each  lstTags in allTags.get("tag_options")
+		{
+			optMap = Map();
+			optMap.put("option_id",lstTags.get("tag_option_id"));
+			optMap.put("name",lstTags.get("tag_option_name"));
+			optMap.put("tag_id",tag.get("tag_id"));
+			contractNoList.add(optMap);
+		}
+	}
+	if(tag.get("tag_id") == "1079000000000510")
+	{
+		// 		branch tag 
+		tagDet = invokeurl
+		[
+			url :"https://books.zoho.sa/api/v3/settings/tags/" + tag.get("tag_id") + "?organization_id=" + organizationID
+			type :GET
+			connection:"books"
+		];
+		//info "Tag Details :" + tagDet;
+		allTags = tagDet.get("reporting_tag");
+		for each  lstTags in allTags.get("tag_options")
+		{
+			brncMap = Map();
+			brncMap.put("option_id",lstTags.get("tag_option_id"));
+			brncMap.put("name",lstTags.get("tag_option_name"));
+			brncMap.put("tag_id",tag.get("tag_id"));
+			branchList.add(brncMap);
+		}
+	}
+	if(tag.get("tag_id") == "1079000000000512")
+	{
+		// 		department tag 
+		tagDet = invokeurl
+		[
+			url :"https://books.zoho.sa/api/v3/settings/tags/" + tag.get("tag_id") + "?organization_id=" + organizationID
+			type :GET
+			connection:"books"
+		];
+		// 		info "Tag Details :" + tagDet;
+		allTags = tagDet.get("reporting_tag");
+		for each  lstTags in allTags.get("tag_options")
+		{
+			depMap = Map();
+			depMap.put("option_id",lstTags.get("tag_option_id"));
+			depMap.put("name",lstTags.get("tag_option_name"));
+			depMap.put("tag_id",tag.get("tag_id"));
+			departmentList.add(depMap);
+		}
+	}
+}
+// // info "Contract List :"+ contractNoList;
+// // info "Branch List :"+ branchList;
+// // info "Department List :"+ departmentList;
+// for each  lb in getBills
+// {
+info bill.get("bill_id");
+billID = bill.get("bill_id");
+billDate = bill.get("date").toDate();
+ftbill = zoho.books.getRecordsByID("bills",organizationID,billID,"books");
+// 	info ftbill;
+bills = ftbill.get("bill");
+Lineitems = List();
+for each  l_item in bills.get("line_items")
+{
+	lineitemMap = Map();
+	all_reporting_tags = List();
+	prjct = l_item.get("project_id");
+	getProjects = zoho.books.getRecordsByID("projects",organizationID,prjct,"books");
+	project = getProjects.get("project");
+	if(project != null)
+	{
+		for each  ln in project.get("custom_fields")
+		{
+			if(ln.get("field_id") == "1079000002720673")
+			{
+				contractNo = ln.get("value");
+				for each  rlTag in contractNoList
+				{
+					if(rlTag.get("name").contains(contractNo))
+					{
+						repMap = Map();
+						repMap.put("tag_option_id",rlTag.get("option_id"));
+						repMap.put("tag_id",rlTag.get("tag_id"));
+						all_reporting_tags.add(repMap);
+					}
+				}
+			}
+			else 
+            {
+				repMap = Map();
+				repMap.put("tag_option_id",null);
+				repMap.put("tag_id",null);
+				all_reporting_tags.add(repMap);
+            }
+			if(ln.get("field_id") == "1079000000049069")
+			{
+				// department 
+				deptmnt = ln.get("value");
+				for each  rlTag in departmentList
+				{
+					if(rlTag.get("name").contains(deptmnt))
+					{
+						deptTagMap = Map();
+						deptTagMap.put("tag_option_id",rlTag.get("option_id"));
+						deptTagMap.put("tag_id",rlTag.get("tag_id"));
+						all_reporting_tags.add(deptTagMap);
+					}
+				}
+			}
+			else 
+            {
+				repMap = Map();
+				repMap.put("tag_option_id",null);
+				repMap.put("tag_id",null);
+				all_reporting_tags.add(repMap);
+            }
+			if(ln.get("field_id") == "1079000000073071")
+			{
+				// branch 
+				branch = ln.get("value");
+				relbrnch = "";
+				if(branch == "Hainya Yard")
+				{
+					relbrnch = "Haniya Yard";
+				}
+				else
+				{
+					relbrnch = branch;
+				}
+				for each  rlTag in branchList
+				{
+					if(rlTag.get("name").contains(relbrnch.toString()))
+					{
+						repMap = Map();
+						repMap.put("tag_option_id",rlTag.get("option_id"));
+						repMap.put("tag_id",rlTag.get("tag_id"));
+						all_reporting_tags.add(repMap);
+					}
+					
+				}
+			}
+			else 
+            {
+				repMap = Map();
+				repMap.put("tag_option_id",null);
+				repMap.put("tag_id",null);
+				all_reporting_tags.add(repMap);
+            }
+		}
+		//info "ContNo :" + contractNo;
+		//info "Branch :" + branch;
+		//info "Dep :" + deptmnt;
+	}
+	lineitemMap.put("tags",all_reporting_tags);
+	lineitemMap.put("line_item_id",l_item.get("line_item_id"));
+	lineitemMap.put("account_id",l_item.get("account_id"));
+	Lineitems.add(lineitemMap);
+}
+datamap = Map();
+datamap.put("line_items",Lineitems);
+// 	info datamap;
+// 	info "*****************";
+updateBill = zoho.books.updateRecord("bills",organizationID,billID,datamap,"books");
+info updateBill.get("message");
+info "****************";
+// }

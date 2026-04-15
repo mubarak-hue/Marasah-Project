@@ -1,0 +1,30 @@
+orgID = organization.get("organization_id");
+projectID = project.get("project_id");
+// resp = zoho.books.getRecordsByID("projects",orgID,projectID,"z_books");
+// info resp;
+rec = invokeurl
+[
+	url :"https://www.zohoapis.sa/books/v3/projects?organization_id=" + orgID
+	type :GET
+	connection:"z_books"
+];
+// info resp;
+count = 0;
+for each  resp in rec.get("projects")
+{
+// 	info resp;
+	projectName = resp.get("project_name");
+	projectCode = resp.get("project_code");
+	info "Project Name >>>:"+projectName + " - "+projectCode;
+	tagId = "1079000000000518";
+	updateTag = invokeurl
+	[
+		url :" https://books.zoho.sa/api/v3/settings/tags/" + tagId + "?organization_id=150000132545"
+		type :PUT
+		parameters:{"JSONString":{"tag_name":"Projects","is_active":true,"tag_options":{{"tag_option_name":projectName + " - " + ifnull(projectCode,"")}}}}
+		connection:"books"
+	];
+	info updateTag;
+	count = count + 1;
+}
+info count;

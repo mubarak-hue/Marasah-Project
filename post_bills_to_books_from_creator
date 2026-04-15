@@ -1,0 +1,441 @@
+org = "150000132545";
+	purch = Bills[ID == input.id];
+	// 	fet_custmer = Customer[ID == purch.Vendor_Name];
+	vend = Vendor[ID == purch.Vendor_Name];
+	getVendor = zoho.books.getRecordsByID("contacts",org,vend.Zoho_Books_Id,"zohobooks3");
+	// 	info getVendor;
+	contact = getVendor.get("contact");
+	vat_reg_id = contact.get("vat_reg_no");
+	// 	projects = Projects[ID == purch.Projects];
+	// 	projectID = projects.Zoho_Books_ID;
+	customers = Customer[ID == purch.Customer];
+	customerID = customers.Zoho_Books_Id;
+	// 	svat_reg_id_as_string = vat_reg_id.toString();
+	// 	f_vat_no = svat_reg_id_as_string.replaceAll("\\s", " ");
+	vat_rg_org = vat_reg_id.remove(" ");
+	// 	info vat_rg_org;
+	billMap = Map();
+	lineitemsMp = List();
+	//info "customer ID :"+ vend.Zoho_Books_Id;
+	billMap.put("vendor_id",vend.Zoho_Books_Id);
+	billMap.put("reference_number",purch.Order_Number);
+	billMap.put("bill_number",purch.Bill);
+	billMap.put("date",purch.Bill_date.toString("yyyy-MM-dd"));
+	billMap.put("due_date",purch.Due_date1.toString("yyyy-MM-dd"));
+	billMap.put("payment_terms_label",purch.Payment_Terms);
+	billMap.put("discount_type","item_level");
+	billMap.put("tax_reg_no",vat_rg_org);
+	for each  rw in purch.Bill_Items
+	{
+		liItemsmp = Map();
+		// 		info "Accounts : "+rw.Account;
+		acntId = chartofaccounts[ID == rw.Account];
+		//info acntId.account_id;
+		taxID = "";
+		taxnum = "";
+		if(rw.Tax.toString() == "Standard Rate - 15%")
+		{
+			taxID = "1079000000018043";
+			taxnum = 15;
+		}
+		else
+		{
+			taxID = "1079000000018049";
+			taxnum = 0;
+		}
+		tx = Tax[Zoho_Books_Id == taxID];
+		// 		tax_id = tx.Zoho_Books_Id;
+		// 		info "Tax ID :"+taxnum;
+		if(rw.Expense_Item != null)
+		{
+			asst = Item[ID == rw.Expense_Item];
+			liItemsmp.put("name",asst.name);
+		}
+		else
+		{
+			liItemsmp.put("name",rw.Description);
+		}
+		//ifnull(asst.sku,"")
+		liItemsmp.put("sku",ifnull(rw.Sku,""));
+		liItemsmp.put("account_id",acntId.account_id);
+		liItemsmp.put("account_name",acntId.account_name);
+		liItemsmp.put("rate",rw.Rate);
+		//liItemsmp.put("discount",rw.Discount_Amount);
+		liItemsmp.put("quantity",rw.QTY);
+		liItemsmp.put("customer_id",customerID);
+		reportedTagsList = List();
+		if(rw.Project != null)
+		{
+			projects = Projects[ID == rw.Project];
+			projectID = projects.Zoho_Books_ID;
+			liItemsmp.put("project_id",projectID);
+			getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+			project = getProjects.get("project");
+			contractNo = "";
+			for each  ln in project.get("custom_fields")
+			{
+				if(ln.get("field_id") == "1079000002720673")
+				{
+					contractNo = ln.get("value");
+					info "Con No :" + contractNo;
+				}
+			}
+			if(contractNo != "")
+			{
+				cntrcts = Project_Contracts[Contract_No == contractNo];
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_option_id",cntrcts.Tag_Opt_ID);
+				reportedTagMap.put("tag_id",cntrcts.Zoho_Books_ID);
+				reportedTagsList.add(reportedTagMap);
+			}
+		}
+		// 		branch 
+		if(rw.Branch != "")
+		{
+			branchTagID = Branch[Name == rw.Branch.toString()];
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_option_id",branchTagID.Branch_ID);
+			reportedTagMap.put("tag_id",branchTagID.Tag_ID);
+			reportedTagsList.add(reportedTagMap);
+		}
+		// 		departments
+		if(rw.Department == "Ductwork Department")
+		{
+			info "ductwork department";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagMap.put("tag_option_id","1079000000049067");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(rw.Department == "Industrial Services Department" || rw.Department == "Industrial Service Department")
+		{
+			info "industrial service departmet ";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagMap.put("tag_option_id","1079000000049065");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(rw.Department == "Administration Department")
+		{
+			info "Adminstrative Department";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagMap.put("tag_option_id","1079000000073145");
+			reportedTagsList.add(reportedTagMap);
+		}
+		liItemsmp.put("tags",reportedTagsList);
+		liItemsmp.put("tax_id",taxID);
+		liItemsmp.put("tax_percentage",rw.Tax);
+		liItemsmp.put("line_item_taxes",{{"tax_id":taxID,"tax_name":rw.Tax,"tax_amount":rw.Tax_Total}});
+		lineitemsMp.add(liItemsmp);
+	}
+	billMap.put("line_items",lineitemsMp);
+	billMap.put("tax_treatment","vat_registered");
+	billMap.put("tax_total",purch.Tax_Total.toDecimal());
+	billMap.put("sub_total",purch.Sub_Total);
+	billMap.put("total",purch.Total);
+	params = Map();
+	params.put("JSONstring",billMap);
+	// 		info params ;
+	//  create a bills 
+	if(purch.Exist_books_ID.trim() == "" || purch.Exist_books_ID == null)
+	{
+		resp = zoho.books.createRecord("bills",org,billMap,"zohobooks3");
+		//info resp;
+		info resp.get("message");
+		if(resp.get("code") == 0)
+		{
+			getBills = resp.get("bill");
+			bill_id = getBills.get("bill_id");
+			info "created Bill ID :" + bill_id;
+			purch.Exist_books_ID=bill_id;
+			// 		mark bill as approved 
+			approveBill = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/approve?organization_id=" + org
+				type :POST
+				connection:"zohobooks3"
+			];
+			// 		info approveBill;
+			// 			thisapp.Fixed_Asset.split_bill_desc_details_to_add_masters(input.id);
+			if(purch.LogiRequest != null)
+			{
+				info "LG bill Req :" + purch.LogiRequest;
+				// 				thisapp.update_bill_after_status_on_lg(purch.LogiRequest);
+				dataMap = Map();
+				dataMap.put("Status","Mobilization Request");
+				otermap = Map();
+				paramsList = List();
+				paramsList.add(dataMap);
+				payload = Map();
+				payload.put("data",paramsList);
+				updateResp = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/LogiRequest_Report/" + purch.LogiRequest.toNumber()
+					type :PATCH
+					parameters:payload
+					connection:"z_creator"
+				];
+				// 				updateResp = zoho.creator.updateRecord("m.alsuhaimi_marasah","fixed-assets","LogiRequest_Report",purch.LogiRequest.toNumber(),dataMap,otermap,"z_creator");
+				info "Update Status to LG :" + updateResp;
+			}
+			purch.Status=approver;
+			purch.Logs=purch.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+		}
+		else
+		{
+			purch.Status="Chief Accountant Approved";
+		}
+		if(purch.Attachments != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachments/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response;
+		}
+		// 	attachment 2
+		if(purch.Attachment_2 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_2/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response2 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response2;
+		}
+		// 	attachment 3 
+		if(purch.Attachment_3 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_3/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response3 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response3;
+		}
+		// 	attachment 4
+		if(purch.Attachment_4 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_4/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response4 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response4;
+		}
+		// 	attachment 5 
+		if(purch.Attachment_5 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_5/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response5 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + bill_id + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response5;
+		}
+		// 	post confirmation 	
+	}
+	// 	update bills 
+	else if(purch.Exist_books_ID.trim() != "" || purch.Exist_books_ID != null)
+	{
+		// 		info "This bill is already created in zoho books so please check and update accordingly ";
+		updateResponse = zoho.books.updateRecord("bills",org,purch.Exist_books_ID,billMap,"zohobooks3");
+		// 		info updateResponse;
+		// 		updateResponse = invokeUrl
+		//         [
+		//         	url: "https://www.zohoapis.sa/books/v3/bills/"+purch.Exist_books_ID+"?organization_id="+org
+		//         	type: PUT
+		//         	parameters: billMap.toString()
+		//         	connection: "zohobooks3"
+		//         ];
+		info updateResponse.get("message");
+		getBills = updateResponse.get("bill");
+		bill_id = getBills.get("bill_id");
+		info "created Bill ID :" + bill_id;
+		purch.Exist_books_ID=bill_id;
+		if(updateResponse.get("code") == 0 || updateResponse.get("message") == "Bill information has been updated.")
+		{
+			purch.Status=approver;
+			purch.Logs=purch.Logs + "\nUpdated by :" + zoho.loginuser + " at :" + zoho.currenttime;
+		}
+		else
+		{
+			purch.Status="Chief Accountant Approved";
+		}
+		if(purch.Attachments != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachments/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + purch.Exist_books_ID + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response;
+		}
+		// 	attachment 2
+		if(purch.Attachment_2 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_2/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response2 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + purch.Exist_books_ID + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response2;
+		}
+		// 	attachment 3 
+		if(purch.Attachment_3 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_3/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response3 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + purch.Exist_books_ID + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response3;
+		}
+		// 	attachment 4
+		if(purch.Attachment_4 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_4/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response4 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + purch.Exist_books_ID + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response4;
+		}
+		// 	attachment 5 
+		if(purch.Attachment_5 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Bills/" + input.id + "/Attachment_5/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("attachment");
+			// 	info var;
+			response5 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/bills/" + purch.Exist_books_ID + "/attachment?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "post response:" + response5;
+		}
+		// 						// 	post confirmation 
+	}
+	else
+	{
+		info "The Bill already created";
+	}

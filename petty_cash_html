@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Record Attachments</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <!-- zoho widget cdn  -->
+    <script type="text/javascript" src="https://js.zohostatic.com/creator/widgets/version/1.0/widgetsdk-min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .record-container { position: relative; display:inline-block; width: 100%;}
+        .record { 
+            cursor: pointer; 
+            padding: 10px; 
+            border: 1px solid #ddd; 
+            margin: 5px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            position: relative;
+            margin-bottom:.6rem;
+            
+        }
+        .related-list {
+            padding: 10px; 
+            border: 1px solid #bdc3c7; 
+            margin: 5px; 
+            border-top: none;
+            border-right: none;
+            border-bottom: none;    
+            margin-left: 20px;
+        }
+        .badge {
+            background: red;
+            color: white;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 20px;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+/*            width: 45% !important;*/
+            white-space: normal;
+            text-align: center;
+            display: flex;
+            align-items: flex-end; 
+            justify-content: center; 
+
+        }
+        .hidden { display: none; }
+        .attachment { 
+            margin-left: 20px;
+            padding: 5px; 
+            cursor: pointer; 
+            color: blue; 
+            text-decoration: underline; 
+        }
+        .popup { 
+            display: none; 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: white; 
+            padding: 20px; 
+            border: 1px solid #ccc; 
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2); 
+            width: 80%; 
+            height: 80vh;
+        }
+        .badge-approve{
+            background: #16a085;
+        }
+        .badge-reject{
+            background: #d35400;
+        }
+        .popup .close { position: absolute; top: 5px; right: 10px; cursor: pointer; font-size: 20px; }
+        .popup iframe { width: 100%; height: 100%; border: none; }
+        .record.active {
+            background-color: #f0f0f0;
+        }
+        .attachment.active {
+            background-color: #d4edda;
+        }
+        .items-heading {
+            color: #2C3E50;
+        }
+    </style>
+</head>
+<body>
+    <div class="record-container">
+        <!-- Record Card -->
+        <!-- <div class="record shadow col-md-8 col-sm-9 w-55" onclick="showAttachments(1)">
+            <div class="col col-md-6">
+                <b style="color:#7F8C8D;">Date of Request: <small class="requested_date h8" style="color:#2C3E50">30/01/2025</small> </b>
+                <br>
+                <br>
+                <b style="color:#7F8C8D;">Total Amount: <small class="total_amount h8" style="color:#2C3E50">500</small></b>
+            </div>
+            <div class="col-6 m-auto ">
+                <small class="badge">Approved by Petty Cash Representative</small>
+                <br><br>
+                <div class="d-flex justify-content-end m-auto">
+                    <button class="btn btn-sm btn-success approve me-2" onclick="event.stopPropagation();">Approve</button>
+                    <button class="btn btn-sm btn-danger reject" onclick="event.stopPropagation();">Reject</button>
+                </div>
+            </div>
+        </div> -->
+
+        <!-- Attachments Section (Initially Hidden) -->
+       <!--  <div id="attachments-1" class="hidden related-list w-55 shadow col-md-8 col-sm-9">
+            <b class="items-heading">Petty Cashes</b>
+            <br>
+            <br>
+            <div class="row" style="display: flex; justify-content: space-around; padding-bottom: 10px;">
+                <div class="col-3"><small style="color: #808080;">Reference No</small><br>456789</div>  
+                <div class="col-6"><small class="attachment" onclick="viewAttachment('attachment1.pdf')">View Attachment A</small></div>  
+                <div class="col-3"><small style="color: #808080;">Total Amount</small><br>8990</div>
+            </div>
+            <hr>
+            <div class="row" style="display: flex; justify-content: space-around; padding-bottom: 10px;">
+                <div class="col-3"><small style="color: #808080;">Reference No</small><br>456789</div>  
+                <div class="col-6"><small class="attachment" onclick="viewAttachment('attachment1.pdf')">View Attachment A</small></div>  
+                <div class="col-3"><small style="color: #808080;">Total Amount</small><br>8990</div>
+            </div>
+        </div>
+    </div> -->
+
+    
+
+    <!-- Popup for Viewing Attachments -->
+    <div id="popup" class="popup">
+        <span class="close">&times;</span>
+        <iframe id="popupFrame"></iframe>
+    </div>
+
+    <script>
+
+ $(document).ready(function() {
+
+    ZOHO.CREATOR.init().then(function() {
+         getAllRecords();
+
+        // var attconfig = {
+        //       app_name: "finance-operations",
+        //       report_name: "All_Petty_Cash_Items",
+        //       id : "3694000000207169",
+        //       field_name : "Receipt1"
+        //     };
+        // ZOHO.CREATOR.FILE.readFile(attconfig).then(function (attFiles) {
+        //   console.log(attFiles);
+        // });
+       });
+
+ });
+
+ // get records 
+ // 
+async function getAllRecords() {
+    var arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let recCount = 0;
+
+    for (var i = 0; i < arr.length; i++) {
+        console.log(arr[i]);
+        let config = {
+            appName: "finance-operations",
+            reportName: "All_Petty_Cash",
+            criteria: '(Status == "Approved by Petty Cash Representative")',
+            page: 1,
+            pageSize: 200
+        };
+
+        try {
+            // Fetch all records
+            const response = await ZOHO.CREATOR.API.getAllRecords(config);
+            const repData = response.data;
+
+            if (!repData || repData.length === 0) {
+                console.log("No records found. Stopping the loop.");
+                break;
+            }
+
+            for (const record of repData) {
+                console.log("Processing Record:", record);
+                const recordHTML = `
+                    <div class="record shadow" onclick="showAttachments(${record.ID})" id="record-${record.ID}">
+                        <div class="col">
+                            <h6>Date of Request: <b>${record.Date_Of_Request}</b></h6><br>
+                            <h6>Total Amount: <b>${record.Total_Amount}</b></h6>
+                        </div>
+                        <div class="col m-auto">
+                            <span class="badge">Pending Approval</span>
+                            <br><br>
+                            <div class="d-flex justify-content-end">
+                                <button class="btn btn-sm btn-success approve me-2" onclick="event.stopPropagation();approveRecord(${record.ID})">Approve</button>
+                                <button class="btn btn-sm btn-danger reject" onclick="event.stopPropagation();rejectRecord(${record.ID})">Reject</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="attachments-${record.ID}" class="hidden related-list">
+                        <h6 class="items-heading">Petty Cashes</h6><br>
+                    </div>
+                `;
+                $('.record-container').append(recordHTML);
+
+                if (Array.isArray(record.Petty_Cashes) && record.Petty_Cashes.length > 0) {
+                    for (const item of record.Petty_Cashes) {
+                        console.log(`Fetching Petty Cash Item:`, item.ID);
+                        const pettyCashConfig = {
+                            appName: "finance-operations",
+                            reportName: "All_Petty_Cash_Items",
+                            id: item.ID
+                        };
+
+                        try {
+                            const pettyItemsResponse = await ZOHO.CREATOR.API.getRecordById(pettyCashConfig);
+
+                            if (pettyItemsResponse.data) {
+                                const pettyItems = pettyItemsResponse.data;
+                                console.log("Petty Cash Items:", pettyItems);
+                                var urlval = pettyItems.Receipt1;   
+                                var filepathValue = urlval.split("?filepath=")[1];
+                                const pettyCashHTML = `
+                                    <div class="row" id="${pettyItems.ID}" style="display: flex; padding-bottom: 10px;">
+                                        <div class="col-sm-3 col-md-4"><small style="color: #808080;">Description</small><br><small>${pettyItems.Description}</small></div>
+                                        <div class="col-sm-3 col-md-4 mt-1" style="text-align:end"><small class="attachment" id="imgtag" onclick="viewAttachment('${pettyItems.Receipt1}')">View Recipt</small></div>
+                                        <div class="col-sm-3 col-md-4 mt-1"><small style="color: #808080;">Total Amount</small><br><small>${pettyItems.Amount}</small></div>
+                                    </div>
+                                    <hr style="border:1px solid #2c3e50;">
+                                `;
+
+                                $(`#attachments-${record.ID}`).append(pettyCashHTML);
+                            }
+                        } catch (error) {
+                            console.error("Error fetching petty cash item:", error);
+                        }
+                    }
+                } else {
+                    console.log("Petty Cash Items is not an array or is empty:", record.Petty_Cashes);
+                }
+            }
+
+            recCount += repData.length;
+            if (recCount < 200) {
+                console.log("Record count exceeded 200. Stopping the loop.");
+                break; // Exit the loop if the record count exceeds 200
+            }
+        } catch (error) {
+            console.error("Error fetching records:", error);
+            break; // Exit the loop if there's an error
+        }
+    }
+}
+
+        // change the status based on button click
+
+        $(".approve").click(function() {
+            $(".badge")
+                .text('Approved by GM') 
+                .removeClass('badge-reject')
+                .addClass('badge-approve'); 
+        });
+
+        $(".reject").click(function() {
+            $(".badge")
+                .text('Rejected by GM') 
+                .removeClass('badge-approve')
+                .addClass('badge-reject'); 
+        });
+
+        function approveRecord(index) {
+            $(`#attachments-${index}`).prev().find('.badge')
+                .text('Approved by GM')
+                .removeClass('badge-reject')
+                .addClass('badge-approve');
+        }
+
+        // Function to reject a record
+        function rejectRecord(index) {
+            $(`#attachments-${index}`).prev().find('.badge')
+                .text('Rejected by GM')
+                .removeClass('badge-approve')
+                .addClass('badge-reject');
+        }
+
+function showAttachments(index) {
+        $('#attachments-' + index).toggleClass('hidden');
+        $('.record').removeClass('active');
+        $('#record-' + index).addClass('active');
+    }
+    // Function to view attachment in a popup
+function viewAttachment(url) {
+    console.log("Attachment URL:", url);
+    var attachURL = "https://creatorapp.zoho.sa"+url;
+    console.log("Orgin URL >>>:"+attachURL);
+    $("#popup").remove();
+
+    // Create the popup dynamically
+    $("body").append(`
+        <div id="popup" class="popup-overlay" 
+            style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center;">
+            <div class="popup-content" 
+                style="background: white; padding: 20px; border-radius: 10px; position: relative; max-width: 90vw; max-height: 90vh;">
+                <span class="popup-close" onclick="closePopup()" 
+                    style="position: absolute; top: 5px; right: 10px; cursor: pointer; font-size: 40px;">&times;
+                </span>
+                <iframe id="popupFrame" src="" 
+                    style="width: 80vw; height: 80vh; border: none;"></iframe>
+            </div>
+        </div>
+    `);
+    // "https://docs.google.com/gview?url="+attachURL+"&inline=true"
+    $("#popupFrame").attr("src", attachURL);
+    // Show the popup
+    $("#popup").fadeIn();
+}
+
+// Function to close the popup
+function closePopup() {
+    $("#popup").fadeOut(function () {
+        $(this).remove();
+    });
+}
+
+    
+    // Delegate event listener for dynamically added elements
+    // $(document).on('click', '.attachment', function(event) {
+    //     event.stopPropagation();
+    //     let url = $(this).attr('data-url');
+    //     viewAttachment(url);
+    // });
+    
+    // Close popup
+    $(document).on('click', '.popup-close, #popup', function(event) {
+        if ($(event.target).is('#popup') || $(event.target).hasClass('popup-close')) {
+            $('#popup').fadeOut(function() {
+                $(this).remove();
+            });
+        }
+    });
+    
+    // Assign data-url attribute to attachment links
+    $('.attachment').each(function() {
+        $(this).attr('data-url', $(this).text());
+    });
+
+    </script>
+</body>
+</html>

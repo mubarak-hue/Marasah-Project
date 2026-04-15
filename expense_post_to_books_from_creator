@@ -1,0 +1,493 @@
+void books.post_expense_zoho_books(int id, string approver)
+{
+	// 	info "record ID:"+id ;
+	// 	info "Approver :"+approver;
+	org = "150000132545";
+	ftexpense = Expense[ID == input.id];
+	expmp = Map();
+	expmp.put("date",ftexpense.Date_field.toString("yyyy-MM-dd"));
+	// 	info ftexpense.Expense_Account;
+	ftchart_acc = chartofaccounts[ID == ftexpense.Expense_Account];
+	expmp.put("account_id",ftchart_acc.account_id);
+	amt = ftexpense.Amount;
+	expmp.put("amount",ftexpense.Amount);
+	// 	info ftexpense.Paid_Through;
+	if(ftexpense.Customer != null)
+	{
+		ft_customer = Customer[ID == ftexpense.Customer];
+		expmp.put("customer_id",ft_customer.Zoho_Books_Id);
+	}
+	ftBanks = Bank_Accounts[ID = ftexpense.Paid_Through];
+	expmp.put("paid_through_account_id",ftBanks.Exist_books_ID);
+	if(ftexpense.Vendor != null)
+	{
+		ftVendor = Vendor[ID == ftexpense.Vendor];
+		tax_number = ftVendor.Tax_Registration_Number_TRN;
+		expmp.put("vendor_id",ftVendor.Zoho_Books_Id);
+		expmp.put("tax_reg_no",tax_number.remove(" "));
+	}
+	expmp.put("place_of_supply",ftexpense.Place_Of_Supply);
+	expmp.put("reference_number",ftexpense.Reference);
+	expmp.put("description",ftexpense.Notes);
+	if(ftexpense.Project_Name != null)
+	{
+		project = Projects[ID == ftexpense.Project_Name];
+		expmp.put("project_name",project.Project_Name);
+		expmp.put("project_id",project.Zoho_Books_ID);
+	}
+	if(ftexpense.Tax_Treatment == "VAT Registered")
+	{
+		expmp.put("tax_treatment","vat_registered");
+		expmp.put("tax_id","1079000000018043");
+		// 		1079000000018043
+		// 		1079000000018049
+		expmp.put("tax_percentage",15);
+		expmp.put("tax_name","Standard Rate");
+		taxpercentage = 15 / 100;
+		tax_amount = ftexpense.Amount * taxpercentage;
+		expmp.put("taxes",{{"tax_name":"Standard Rate (15%)","tax_amount":tax_amount.round(1)}});
+	}
+	else
+	{
+		expmp.put("tax_treatment","");
+	}
+	reportedTagsList = List();
+	if(ftexpense.Branch == "Head Office")
+	{
+		info "headoffice branch ";
+		reportedTagMap = Map();
+		reportedTagMap.put("tag_option_id","1079000000043113");
+		reportedTagMap.put("tag_id","1079000000000510");
+		reportedTagsList.add(reportedTagMap);
+	}
+	else if(ftexpense.Branch == "Haniya Yard")
+	{
+		info "haniya yard";
+		reportedTagMap = Map();
+		reportedTagMap.put("tag_option_id","1079000000043111");
+		reportedTagMap.put("tag_id","1079000000000510");
+		reportedTagsList.add(reportedTagMap);
+	}
+	if(ftexpense.Department == "Ductwork Department")
+	{
+		info "ductwork department";
+		reportedTagMap = Map();
+		reportedTagMap.put("tag_id","1079000000000512");
+		reportedTagMap.put("tag_option_id","1079000000049067");
+		reportedTagsList.add(reportedTagMap);
+	}
+	else if(ftexpense.Department == "Industrial Services Department")
+	{
+		info "industrial service departmet ";
+		reportedTagMap = Map();
+		reportedTagMap.put("tag_id","1079000000000512");
+		reportedTagMap.put("tag_option_id","1079000000049065");
+		reportedTagsList.add(reportedTagMap);
+	}
+	expmp.put("tags",reportedTagsList);
+	paramsMp = Map();
+	paramsMp.put("JSONString",expmp);
+	// 		info paramsMp;
+	// 	create Expense 
+	if(ftexpense.Exist_books_ID == "")
+	{
+		response = zoho.books.createRecord("expenses",org,expmp,"zohobooks3");
+		info response.get("message");
+		getexpense = response.getJSON("expense");
+		info "get expenses ->" + getexpense;
+		expense_ID = getexpense.getJSON("expense_id");
+		info "expense_ID ->" + expense_ID;
+		ftexpense.Exist_books_ID=expense_ID;
+		if(ftexpense.File_upload != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/File_upload/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("receipt");
+			//info var;
+			// 	recid = "1079000000270694";
+			responseA = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "/receipt?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks"
+			];
+			info "Attachments :" + responseA;
+		}
+		// 	attachment 1
+		if(ftexpense.Attachment_1 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_1/download";
+			fileContent = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			fileContent.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:fileContent
+				connection:"zohobooks"
+			];
+			documentID1 = docs.get("documents").toMap().get("document_id");
+			info documentID1;
+			imap = Map();
+			imap.put("index",2);
+			imap.put("api_name","cf_attachment1");
+			imap.put("value",documentID1);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response1 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks"
+			];
+			info response1;
+		}
+		// 	attachment 2 
+		if(ftexpense.Attachment_2 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_2/download";
+			attach2 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach2.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach2
+				connection:"zohobooks3"
+			];
+			documentID2 = docs.get("documents").toMap().get("document_id");
+			info documentID2;
+			imap = Map();
+			imap.put("index",3);
+			imap.put("api_name","cf_attachment_2");
+			imap.put("value",documentID2);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response2 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response2;
+		}
+		// 	attachment 3
+		if(ftexpense.Attachment_3 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_3/download";
+			attach3 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach3.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach3
+				connection:"zohobooks3"
+			];
+			documentID3 = docs.get("documents").toMap().get("document_id");
+			info documentID3;
+			imap = Map();
+			imap.put("index",4);
+			imap.put("api_name","cf_attachment_3");
+			imap.put("value",documentID3);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response3 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response3;
+		}
+		// 	attachment 4
+		if(ftexpense.Attachment_4 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_4/download";
+			attach4 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach4.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach4
+				connection:"zohobooks3"
+			];
+			documentID4 = docs.get("documents").toMap().get("document_id");
+			info documentID4;
+			imap = Map();
+			imap.put("index",5);
+			imap.put("api_name","cf_attachment_4");
+			imap.put("value",documentID4);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response4 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response4;
+		}
+		if(response.get("code") == 0)
+		{
+			ftexpense.Status=approver;
+			ftexpense.Logs=ftexpense.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+		}
+		else
+		{
+			ftexpense.Status="Chief Accountant Approved";
+		}
+	}
+	// 	else
+	// 	{
+	// 		info " This Expense already creaded in zoho books so please check and make the changes accordingly ";
+	// 	}
+	// 	update expense 
+	else
+	{
+// 		updateResponse = zoho.books.updateRecord("expenses",org,ftexpense.Exist_books_ID,expmp,"zohobooks3");
+// 		info updateResponse;
+// 		info updateResponse.get("message");
+// 		getexpense = updateResponse.getJSON("expense");
+// 		info "get expenses ->" + getexpense;
+// 		expense_ID = getexpense.getJSON("expense_id");
+		expense_ID = "1079000000622132";
+		info "expense_ID ->" + expense_ID;
+		ftexpense.Exist_books_ID=expense_ID;
+		if(ftexpense.File_upload != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/File_upload/download";
+			var = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			var.setparamName("receipt");
+			//info var;
+			// 	recid = "1079000000270694";
+			responseA = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + ftexpense.Exist_books_ID + "/receipt?organization_id=" + org
+				type :POST
+				files:var
+				connection:"zohobooks3"
+			];
+			info "Attachments :" + responseA;
+		}
+		// 	attachment 1
+		if(ftexpense.Attachment_1 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_1/download";
+			fileContent = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			fileContent.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:fileContent
+				connection:"zohobooks3"
+			];
+			documentID1 = docs.get("documents").toMap().get("document_id");
+			info documentID1;
+			imap = Map();
+			imap.put("index",2);
+			imap.put("api_name","cf_attachment1");
+			imap.put("value",documentID1);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response1 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + ftexpense.Exist_books_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response1;
+		}
+		// 	attachment 2 
+		if(ftexpense.Attachment_2 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_2/download";
+			attach2 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach2.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach2
+				connection:"zohobooks3"
+			];
+			documentID2 = docs.get("documents").toMap().get("document_id");
+			info documentID2;
+			imap = Map();
+			imap.put("index",3);
+			imap.put("api_name","cf_attachment_2");
+			imap.put("value",documentID2);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response2 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + ftexpense.Exist_books_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response2;
+		}
+		// 	attachment 3
+		if(ftexpense.Attachment_3 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_3/download";
+			attach3 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach3.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach3
+				connection:"zohobooks3"
+			];
+			documentID3 = docs.get("documents").toMap().get("document_id");
+			info documentID3;
+			imap = Map();
+			imap.put("index",4);
+			imap.put("api_name","cf_attachment_3");
+			imap.put("value",documentID3);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response3 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + ftexpense.Exist_books_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response3;
+		}
+		// 	attachment 4
+		if(ftexpense.Attachment_4 != null)
+		{
+			url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + input.id + "/Attachment_4/download";
+			attach4 = invokeurl
+			[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+			];
+			// 	info var;
+			attach4.setparamName("attachment");
+			url = "https://www.zohoapis.sa/books/v3/documents?organization_id=" + org;
+			docs = invokeurl
+			[
+				url :url
+				type :POST
+				files:attach4
+				connection:"zohobooks3"
+			];
+			documentID4 = docs.get("documents").toMap().get("document_id");
+			info documentID4;
+			imap = Map();
+			imap.put("index",5);
+			imap.put("api_name","cf_attachment_4");
+			imap.put("value",documentID4);
+			ilist = List();
+			ilist.add(imap);
+			json = Map();
+			json.put("custom_fields",ilist);
+			response4 = invokeurl
+			[
+				url :"https://www.zohoapis.sa/books/v3/expenses/" + ftexpense.Exist_books_ID + "?organization_id=" + org
+				type :PUT
+				parameters:json.toString()
+				connection:"zohobooks3"
+			];
+			info response4;
+		}
+		if(response.get("code") == 0)
+		{
+			ftexpense.Status=approver;
+			ftexpense.Logs=ftexpense.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+		}
+		else
+		{
+			ftexpense.Status="Chief Accountant Approved";
+		}
+	}
+}

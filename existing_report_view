@@ -1,0 +1,1 @@
+openUrl("#Form:Purchase_Order?recLinkID=" + po + "&viewLinkName=All_Purchase_Orders&zc_Header=false","popup window");

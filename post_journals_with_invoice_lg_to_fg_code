@@ -1,0 +1,316 @@
+void finance_gate.post_invoice_to_fg(int invID)
+{
+	inv = Invoices[ID == invID];
+	customer = Add_Customer[ID == inv.Customer_Name].Zoho_Books_Id;
+	getRelCustomer = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Customer_Report?criteria=Zoho_Books_Id.contains(\"" + customer + "\")"
+		type :GET
+		connection:"z_creator"
+	];
+	// 	info getRelCustomer ;
+	if(getRelCustomer != null && getRelCustomer.size() > 0)
+	{
+		srchCust = getRelCustomer.get("data").get(0);
+		customer_ID = srchCust.get("ID");
+	}
+	else
+	{
+		info "Customer not found!";
+		return;
+	}
+	// 	info customer_ID ;
+	getAll_project = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Projects"
+		type :GET
+		connection:"z_creator"
+	];
+	// 	info "FG Project :"+getAll_project;
+	prt_date = getAll_project.get("data");
+	fg_project_list = List();
+	for each  project in prt_date
+	{
+		fg_project_list.add({"books_id":project.get("Zoho_Books_ID"),"project_record_id":project.get("ID")});
+	}
+	fg_chart_of_acc = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/chartofaccounts_report"
+		type :GET
+		connection:"z_creator"
+	];
+	acc_data = fg_chart_of_acc.get("data");
+	acc_details = List();
+	for each  acc in acc_data
+	{
+		acc_details.add({"account_code":acc.get("account_code"),"account_record_id":acc.get("ID")});
+	}
+	invMap = Map();
+	invMap.put("Customer_Name",customer_ID);
+	invMap.put("Invoice1",inv.Invoice);
+	invMap.put("Order_Number",inv.Order_Number);
+	invMap.put("Invoice_Date",inv.Invoice_Date);
+	if(inv.Terms == "Due On Receipt")
+	{
+		invMap.put("Terms","Due On Recipt");
+	}
+	else
+	{
+		invMap.put("Terms",inv.Terms);
+	}
+	invMap.put("Due_Date",inv.Due_Date);
+	// 	invMap.put("Supply_Date",inv.)
+	// 	invMap.put("Place_of_Supply",inv.)
+	invMap.put("Transaction_Type",inv.Transaction_Type);
+	invMap.put("Subject_field",inv.Subject_field1);
+	invMap.put("Status","Pending");
+	line_items = List();
+	asset_sale_value = List();
+	for each  item in inv.Item_Details
+	{
+		l_map = Map();
+		if(item.Asset != null)
+		{
+			asset = Asset_Master_Entry[ID == item.Asset];
+			if(asset != null)
+			{
+				l_map.put("Item_Description",asset.Asset_Unique_ID + " - " + asset.Asset_Name);
+				ft_dep = Run_Completion_Subform[Asset_Master_Entry == asset.ID && Current_Date >= asset.Purchase_Date && Current_Date <= eomonth(zoho.currentdate,0)];
+				asset_total_dep_value = 0;
+				for each  dep in ft_dep
+				{
+					asset_total_dep_value = asset_total_dep_value + ifnull(dep.Monthly_Depreciation,0.00);
+				}
+				asset_acc = "";
+				asset_dep_acc = "";
+				for each  fg_acc_ in acc_details
+				{
+					asset_type = Asset_Type[ID == asset.Asset_Type];
+					rel_ass_acc = Chart_of_Accounts[ID == asset_type.Asset_Account];
+					rel_dep_acc = Chart_of_Accounts[ID == asset_type.Depreciation_Account];
+					if(fg_acc_.get("account_code") == rel_ass_acc.Account_Code)
+					{
+						// 						l_map.put("Account",fg_acc_.get("ID"));
+						asset_acc = fg_acc_.get("ID");
+						break;
+					}
+					if(fg_acc_.get("account_code") == rel_dep_acc.Account_Code)
+					{
+						asset_dep_acc = fg_acc_.get("ID");
+						break;
+					}
+				}
+			}
+			else
+			{
+				info "Asset not found";
+				return;
+			}
+		}
+		l_map.put("Item_Description",asset.Asset_Unique_ID + " - " + asset.Asset_Name);
+		l_map.put("Quantity",item.Quantity);
+		if(item.Account != null)
+		{
+			ca = Chart_of_Accounts[ID == item.Account];
+			for each  fg_acc in acc_details
+			{
+				if(fg_acc.get("account_code") == ca.Account_Code)
+				{
+					l_map.put("Account",fg_acc.get("ID"));
+					// 					account_id = fg_acc.get("ID");
+					break;
+				}
+			}
+		}
+		l_map.put("Rate",item.Sales_Value);
+		l_map.put("Discount",item.Discount);
+		if(item.Tax != null)
+		{
+			tax_ = Tax[ID == item.Tax];
+			if(tax_.Tax_Name == "Standard Rate")
+			{
+				l_map.put("Tax","Standard Rate [ 15% ]");
+			}
+			else
+			{
+				l_map.put("Tax","Zero Rate");
+			}
+		}
+		l_map.put("Amount",ifnull(item.Amount,0.00));
+		project_rec_id = null;
+		if(item.Project != null)
+		{
+			lg_prjt = Projects[ID == item.Project].Zoho_Books_ID;
+			for each  prjt_data in fg_project_list
+			{
+				if(prjt_data.get("books_id") == lg_prjt)
+				{
+					l_map.put("Project",prjt_data.get("project_record_id"));
+					project_rec_id = prjt_data.get("project_record_id");
+					break;
+				}
+			}
+		}
+		l_map.put("Department",item.Department);
+		l_map.put("Branch",item.Branch);
+		asset_sale_value.add({"Asset_ID":asset.ID,"sale_value":item.Sales_Value,"account_id":asset_acc,"dep_acc_id":asset_dep_acc,"total_dep_value":asset_total_dep_value,"project":project_rec_id,"branch":item.Branch,"department":item.Department});
+		line_items.add(l_map);
+	}
+	jMap = Map();
+	jMap.put("Reference",inv.Invoice);
+	jMap.put("Date_field",inv.Invoice_Date.toString("dd-MMM-yyyy"));
+	jMap.put("Currency","SAR- Saudi Riyal");
+	// 	jMap.put("Journal_Type",);
+	jMap.put("Status","Pending");
+	jrnl_list = List();
+	journal_total = 0;
+	total_debit = 0;
+	total_credit = 0;
+	if(asset_sale_value.size() > 0)
+	{
+		for each  depAsset in asset_sale_value
+		{
+			Asset_selling_value = depAsset.get("sale_value");
+			assetRec = Asset_Master_Entry[ID == depAsset.get("Asset_ID").toNumber()];
+			t_dep_value = depAsset.get("total_dep_value");
+			dr_total_deprection = depAsset.get("dep_acc_id");
+			asset_sales_dr_account = "1079000000199605";
+			// Assets Available for Sale - 	123001 - fg_rec_id
+			dain_loss_acc = "1079000005433537";
+			//Gain/Loss on Disposal of PPE ( ASSET) - 540001 - fg_rec_id
+			// 		accumulated_depreciation_debit 
+			jrnl_list.add({"Account":dr_total_deprection,"debit_or_credit":"debit","Description":"Accumulated Depreciation Reversal | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(t_dep_value,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"Branch":ifnull(depAsset.get("branch"),""),"Department":ifnull(depAsset.get("department"),"")});
+			journal_total = journal_total + ifnull(t_dep_value,0.00);
+			// 		sale of debit 
+			jrnl_list.add({"Account":asset_sales_dr_account,"debit_or_credit":"debit","Description":"Proceeds from Sale of Asset | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(Asset_selling_value,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"Branch":ifnull(depAsset.get("branch"),""),"Department":ifnull(depAsset.get("department"),"")});
+			journal_total = journal_total + ifnull(Asset_selling_value,0.00);
+			// 		purchase of asset 
+			jrnl_list.add({"Account":depAsset.get("account_id"),"debit_or_credit":"credit","Description":"Sale of Asset | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(assetRec.Purchase_Value1,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"Branch":ifnull(depAsset.get("branch"),""),"Department":ifnull(depAsset.get("department"),"")});
+			journal_total = journal_total + ifnull(assetRec.Purchase_Value1,0.00);
+			// 		gain loss cr _ dr 
+			nbv = ifnull(assetRec.Purchase_Value1,0.00) - ifnull(t_dep_value,0.00);
+			sale_value = ifnull(Asset_selling_value,0.00);
+			gain_loss = sale_value - nbv;
+			if(gain_loss >= 0)
+			{
+				// 			info "Gain on sale: " + gain_loss;
+				jrnl_list.add({"Account":dain_loss_acc,"debit_or_credit":"credit","Description":"Gain recognized on Sale of " + assetRec.Asset_Name,"amount":ifnull(gain_loss,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"Branch":ifnull(depAsset.get("branch"),""),"Department":ifnull(depAsset.get("department"),"")});
+			}
+			else
+			{
+				// 			info "Loss on sale: " + gain_loss;
+				jrnl_list.add({"Account":dain_loss_acc,"debit_or_credit":"debit","Description":"Loss recognized on Sale of " + assetRec.Asset_Name,"amount":ifnull(gain_loss,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"Branch":ifnull(depAsset.get("branch"),""),"Department":ifnull(depAsset.get("department"),"")});
+			}
+			journal_total = journal_total + ifnull(gain_loss,0.00);
+		}
+	}
+	jMap.put("Journal_Items",jrnl_list);
+	jMap.put("Notes",inv.Terms);
+	jMap.put("Logs","Asset Sales Journals record created from LogiRequest by " + zoho.loginuser + " on " + zoho.currenttime);
+	jMap.put("Total",ifnull(journal_total,0.00));
+	jMap.put("Difference",0.00);
+	// 	jMap.put("LogiRequest1",inv.Lo);
+	otherMap = Map();
+// 	crt_sales_jrnl = zoho.creator.createRecord("m.alsuhaimi_marasah","finance-operations","Journals",jMap,otherMap,"z_creator");
+// 	info "Sales Journals Created Resp : >>> " + crt_sales_jrnl.get("message");
+// 	if(crt_sales_jrnl.get("code") == 3000)
+// 	{
+// 		xpRecordID = crt_sales_jrnl.get("data").get("ID");
+// 		inv.FG_Journal=xpRecordID;
+// 		// 		invoice script start 
+// 		invMap.put("Line_Items",line_items);
+// 		invMap.put("Subtotal",inv.Sub_Total);
+// 		invMap.put("Tax_Total",inv.Tax_Total);
+// 		invMap.put("Total",inv.Invoice_Amount);
+// 		invMap.put("Terms_Conditions",inv.Subject_field);
+// 		paramsMap = Map();
+// 		paramsList = List();
+// 		paramsList.add(invMap);
+// 		paramsMap.put("data",paramsList);
+// 		create_fg_invoice = invokeurl
+// 		[
+// 			url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/form/Invoices"
+// 			type :POST
+// 			parameters:paramsMap.toString()
+// 			connection:"z_creator"
+// 		];
+// 		info "Invoice Created  ( FG ) :" + create_fg_invoice;
+// 		getResp = create_fg_invoice.get("result").get(0);
+// 		if(getResp.get("code") == 3000)
+// 		{
+// 			if(getResp.get("data") != null)
+// 			{
+// 				invRecID = getResp.get("data").get("ID");
+// 				inv.FG_Invoice_ID=invRecID;
+// 				user = User_Master[Position == "Accountants" || Position == "Chief Accountants"];
+// 				org_email = List();
+// 				portal_email = List();
+// 				for each  u in user
+// 				{
+// 					org_email.add(u.Organization_Email);
+// 					portal_email.add(u.User_Email);
+// 				}
+// 				for each  assetID in asset_sale_value
+// 				{
+// 					asset_mas = Asset_Master_Entry[ID == assetID.get("Asset_ID")];
+// 					asset_mas.FG_Invoice=invRecID;
+// 					asset_mas.Customer=inv.Customer_Name;
+// 					asset_mas.Invoice_Date=inv.Invoice_Date;
+// 					asset_mas.Sale_Value=assetID.get("sale_value");
+// 					asset_mas.Asset_Stage="Sold / Decommissioned";
+// 					asset_mas.Approval_Status="A&F Manager Generated Invoice";
+// 				}
+// 				// 		Dpcuments
+// 				if(inv.Documents != null && inv.Documents.size() > 0)
+// 				{
+// 					docList = List();
+// 					for each  docpath in inv.Documents
+// 					{
+// 						url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Invoice_Report/" + inv.ID + "/Documents/download?filepath=" + docpath;
+// 						var = invokeurl
+// 						[
+// 							url :url_endpoint
+// 							type :GET
+// 							connection:"z_creator"
+// 						];
+// 						//info var;
+// 						var.setParamName("file");
+// 						docList.add(var);
+// 					}
+// 					uploadURL1 = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Invoices/" + invRecID + "/Documents/upload";
+// 					invuploadedFileRep = invokeurl
+// 					[
+// 						url :uploadURL1
+// 						type :POST
+// 						files:docList
+// 						connection:"z_creator"
+// 					];
+// 					info "File uploaded ( Invouces_documents ) → " + invuploadedFileRep;
+// 				}
+// 				if(inv.Attachment != null)
+// 				{
+// 					url_endpoint_1 = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Invoice_Report/" + inv.ID + "/Attachment/download";
+// 					var1 = invokeurl
+// 					[
+// 						url :url_endpoint_1
+// 						type :GET
+// 						connection:"z_creator"
+// 					];
+// 					//info var;
+// 					var1.setParamName("file");
+// 					uploadURL1_ = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Invoices/" + invRecID + "/Attachment_1/upload";
+// 					invuploadedFileRep = invokeurl
+// 					[
+// 						url :uploadURL1_
+// 						type :POST
+// 						files:var1
+// 						connection:"z_creator"
+// 					];
+// 					info "File uploaded ( Invouces_attachment ) → " + invuploadedFileRep;
+// 				}
+// 			}
+// 		}
+// 		// 		invoice script done 
+// 	}
+	// 	jrnls automationo ends
+}

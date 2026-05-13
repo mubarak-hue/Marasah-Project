@@ -1,0 +1,13 @@
+val = thisapp.permissions.loginUserProfile();
+	info val;
+	if(val == "Administrator" || val == "Write")
+	{
+		info "Internal user";
+	}
+	else
+	{
+		info "portal user";
+	}
+
+<variable> = thisapp.portal.loginUserProfile();
+<variable> = thisapp.permissions.loginUserProfile();

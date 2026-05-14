@@ -1,0 +1,905 @@
+<%{
+	assetRecord = Asset_Master_Entry[ID == 123445678765];
+	%>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Report - <%=assetRecord.Asset_Unique_ID%></title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #fff;
+            padding: 40px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+        }
+        
+        /* Header */
+        .report-header {
+            border-bottom: 4px solid #2c3e50;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .company-info {
+            flex: 1;
+        }
+        
+        .company-name {
+            font-size: 28px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .company-subtitle {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        
+        .report-title {
+            text-align: right;
+            flex: 1;
+        }
+        
+        .report-title h1 {
+            font-size: 24px;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .report-date {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        
+        /* Asset Header Banner */
+        .asset-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .asset-image-container {
+            width: 150px;
+            height: 150px;
+            background: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .asset-image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .asset-banner-info {
+            flex: 1;
+        }
+        
+        .asset-banner h2 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .asset-id {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+        
+        .asset-status-badges {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .badge-active {
+            background: #10b981;
+        }
+        
+        .badge-depreciation {
+            background: #f59e0b;
+        }
+        
+        /* Sections */
+        .report-section {
+            margin-bottom: 35px;
+            page-break-inside: avoid;
+        }
+        
+        .section-header {
+            background: #f8f9fa;
+            padding: 12px 20px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .field-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px 30px;
+            margin-bottom: 20px;
+        }
+        
+        .field-grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .field-grid-1 {
+            grid-template-columns: 1fr;
+        }
+        
+        .field-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .field-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        
+        .field-value {
+            font-size: 14px;
+            color: #2c3e50;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+            min-height: 36px;
+        }
+        
+        .field-value-large {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .field-value-currency {
+            font-size: 16px;
+            font-weight: 600;
+            color: #10b981;
+        }
+        
+        .field-value-empty {
+            color: #adb5bd;
+            font-style: italic;
+        }
+        
+        /* Financial Summary Box */
+        .financial-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 25px 0;
+        }
+        
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .summary-card.green {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .summary-card.orange {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        
+        .summary-card.red {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .summary-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .summary-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #7f8c8d;
+            font-weight: 600;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 14px;
+        }
+        
+        table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* QR Code Section */
+        .qr-section {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 30px 0;
+        }
+        
+        .qr-placeholder {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 15px;
+            background: white;
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #adb5bd;
+        }
+        
+        /* Signature Section */
+        .signature-section {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-top: 50px;
+            padding-top: 30px;
+            border-top: 2px solid #e9ecef;
+        }
+        
+        .signature-box {
+            text-align: center;
+        }
+        
+        .signature-line {
+            border-top: 2px solid #2c3e50;
+            margin-top: 60px;
+            padding-top: 10px;
+        }
+        
+        .signature-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .signature-name {
+            font-weight: 600;
+            margin-top: 5px;
+        }
+        
+        /* Print Styles */
+        @media print {
+            body {
+                padding: 20px;
+            }
+            
+            .report-section {
+                page-break-inside: avoid;
+            }
+            
+            .no-print {
+                display: none;
+            }
+        }
+        
+        /* Subform Tables */
+        .subform-table {
+            margin: 15px 0;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #adb5bd;
+            font-style: italic;
+        }
+        
+        /* Footer */
+        .report-footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid #e9ecef;
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Report Header -->
+        <div class="report-header">
+            <div class="company-info">
+                <div class="company-name">MARASAH COMPANY</div>
+                <div class="company-subtitle">Fixed Asset Management System</div>
+            </div>
+            <div class="report-title">
+                <h1>ASSET REPORT</h1>
+                <div class="report-date">Generated: <%=zoho.currenttime.toString("dd-MMM-yyyy hh:mm a")%></div>
+            </div>
+        </div>
+        
+        <%
+        // Get asset record - Replace with your actual asset record
+        assetRecord = Asset_Master_Entry[ID == 123456789];
+        
+        if(assetRecord != null)
+        {
+        %>
+        
+        <!-- Asset Banner -->
+        <div class="asset-banner">
+            <div class="asset-image-container">
+                <% if(assetRecord.Image != null && assetRecord.Image != "") { %>
+                    <img src="<%=assetRecord.Image%>" alt="Asset Image">
+                <% } else { %>
+                    <div style="color: #cbd5e0;">No Image</div>
+                <% } %>
+            </div>
+            <div class="asset-banner-info">
+                <h2><%=assetRecord.Asset_Name%></h2>
+                <div class="asset-id">Asset ID: <%=assetRecord.Asset_Unique_ID%></div>
+                <div class="asset-status-badges">
+                    <span class="badge badge-active"><%=assetRecord.Asset_Status%></span>
+                    <span class="badge"><%=assetRecord.Asset_Type.Asset_Category%></span>
+                    <% if(assetRecord.Asset_Stage != null) { %>
+                        <span class="badge"><%=assetRecord.Asset_Stage%></span>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Financial Summary -->
+        <div class="financial-summary">
+            <div class="summary-card">
+                <div class="summary-label">Purchase Value</div>
+                <div class="summary-value"><%=assetRecord.Purchase_Value1.toDecimal().round(2)%> SAR</div>
+            </div>
+            <div class="summary-card green">
+                <div class="summary-label">Current Value</div>
+                <div class="summary-value"><%=ifnull(assetRecord.Current_Value,0).round(2)%> SAR</div>
+            </div>
+            <div class="summary-card orange">
+                <div class="summary-label">Total Depreciation</div>
+                <div class="summary-value"><%=ifnull(assetRecord.Total_Accumulated_Depreciation,0).round(2)%> SAR</div>
+            </div>
+            <div class="summary-card red">
+                <div class="summary-label">Book Value</div>
+                <div class="summary-value"><%=ifnull(assetRecord.Book_Value1,0).round(2)%> SAR</div>
+            </div>
+        </div>
+        
+        <!-- Section 1: Asset Identification -->
+        <div class="report-section">
+            <div class="section-header">1. ASSET IDENTIFICATION</div>
+            <div class="field-grid field-grid-3">
+                <div class="field-item">
+                    <div class="field-label">Asset Unique ID</div>
+                    <div class="field-value field-value-large"><%=assetRecord.Asset_Unique_ID%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Name</div>
+                    <div class="field-value"><%=assetRecord.Asset_Name%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Type</div>
+                    <div class="field-value"><%=assetRecord.Asset_Type.Asset_Category%></div>
+                </div>
+            </div>
+            
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Asset Code Type</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Code,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Product Serial Number</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Product_Sr_No,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Old Serial Number</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Old_Serial_No,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Status</div>
+                    <div class="field-value"><%=assetRecord.Asset_Status%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Stage</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Stage,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Recorded Type</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Recorded,"Main")%></div>
+                </div>
+            </div>
+            
+            <div class="field-grid field-grid-1">
+                <div class="field-item">
+                    <div class="field-label">Asset Specifications</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Specifications,"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 2: Financial Details -->
+        <div class="report-section">
+            <div class="section-header">2. FINANCIAL DETAILS</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Purchase Value (Excl. VAT)</div>
+                    <div class="field-value field-value-currency"><%=assetRecord.Purchase_Value1.toDecimal().round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">VAT Percentage</div>
+                    <div class="field-value"><%=ifnull(assetRecord.VAT_Percentage,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">VAT Amount</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.VAT_Amount,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Total Amount (Incl. VAT)</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.Total_Amount_Including_VAT,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Current Value</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.Current_Value,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Book Value</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.Book_Value1,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Total Accumulated Depreciation</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.Total_Accumulated_Depreciation,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Expected Salvage Value</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Expected_Salvage_Value1,0).round(2)%> SAR</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 3: Location & Assignment -->
+        <div class="report-section">
+            <div class="section-header">3. LOCATION & ASSIGNMENT</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Department</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Location1.Department_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Project</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Project.Project_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Employee Assigned</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Employee.Employee_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Allocated Location</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Allocated_Location,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Physical Location</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Location,"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 4: Purchase Information -->
+        <div class="report-section">
+            <div class="section-header">4. PURCHASE INFORMATION</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Vendor (Registered)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Vendor_Name1.Vendor_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Vendor (Non-Registered)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Vendor_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Purchase Order</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Purchase_Order.PO_No,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">LogiRequest Reference</div>
+                    <div class="field-value"><%=ifnull(assetRecord.LogiRequest_Reference.Request,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Date of Purchase</div>
+                    <div class="field-value"><%=assetRecord.Purchase_Date.toString("dd-MMM-yyyy")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Date of Recording</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Current_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Purchase Status</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Purchase_Status,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">VAT Number</div>
+                    <div class="field-value"><%=ifnull(assetRecord.VAT_Number,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Procurement Card</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Procurement_Card_H.Account_Name,"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 5: Depreciation Details -->
+        <div class="report-section">
+            <div class="section-header">5. DEPRECIATION DETAILS</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Depreciation Method</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_Method,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation Frequency</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_Frequency,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Computation Type</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Computation_Type,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation Start Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_Start_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation End Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Warranty_Expiration_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Last Depreciated Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Last_Depreciated_date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+            </div>
+            
+            <div class="field-grid field-grid-3">
+                <div class="field-item">
+                    <div class="field-label">Expected Life (Years)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Expected_Life_in_Yrs1,0)%> Years</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Age (Years)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Age_in_Yrs,0)%> Years</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Remaining Life (Years)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Remaining_Life_in_Yrs,0)%> Years</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation % per Year</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_per_Year,0)%>%</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation % per Month</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_per_Month,0)%>%</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Life (Months)</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Life,"N/A")%> Months</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 6: Account Mapping -->
+        <div class="report-section">
+            <div class="section-header">6. ACCOUNT MAPPING</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Fixed Asset Account</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Account.Account_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Expense Account</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Expense_Account.Account_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Depreciation Account</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Depreciation_Account.Account_Name,"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 7: Warranty & Maintenance -->
+        <div class="report-section">
+            <div class="section-header">7. WARRANTY & MAINTENANCE</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Warranty Status</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Warranty_Status,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Warranty Expiry Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Warranty_Expiry_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Warranty/AMC Expiry Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Warranty_AMC_Expiry_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Commission/Installation Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Commission_Installation_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+            </div>
+            
+            <!-- Calibration Certificates -->
+            <% 
+            calibrationRecords = Asset_Calibration_Certificates[Asset_Master_Entry == assetRecord.ID];
+            if(calibrationRecords.size() > 0) 
+            { 
+            %>
+                <h4 style="margin: 20px 0 10px 0; color: #667eea;">Calibration Certificates</h4>
+                <table class="subform-table">
+                    <thead>
+                        <tr>
+                            <th>Calibration Date</th>
+                            <th>Serial No</th>
+                            <th>Expiry Date</th>
+                            <th>Certificate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% 
+                        for each cert in calibrationRecords 
+                        { 
+                        %>
+                            <tr>
+                                <td><%=cert.Calibration_Date.toString("dd-MMM-yyyy")%></td>
+                                <td><%=ifnull(cert.Serial_No,"N/A")%></td>
+                                <td><%=cert.Expiry_Date.toString("dd-MMM-yyyy")%></td>
+                                <td><% if(cert.Certificate != "") { %>Available<% } else { %>N/A<% } %></td>
+                            </tr>
+                        <% 
+                        } 
+                        %>
+                    </tbody>
+                </table>
+            <% 
+            } else { 
+            %>
+                <div class="empty-state">No calibration certificates on record</div>
+            <% 
+            } 
+            %>
+        </div>
+        
+        <!-- Section 8: Asset Components/Quantity -->
+        <div class="report-section">
+            <div class="section-header">8. ASSET COMPONENTS & QUANTITY</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Has Components?</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Does_the_Asset_Have_Components,"No")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Number of Components</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Associated_Components,"0")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Has Multiple Quantity?</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Does_the_Asset_Have_Quantity,"No")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Asset Quantity</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Qty,"0")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 9: Disposal Information (if applicable) -->
+        <% if(assetRecord.Disposal_Type != null || assetRecord.Asset_Status == "Asset Available For Sale" || assetRecord.Asset_Status == "Sold") { %>
+        <div class="report-section">
+            <div class="section-header">9. DISPOSAL INFORMATION</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Disposal Type</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Disposal_Type,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Disposal Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Disposal_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Customer</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Customer.Customer_Name,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Sale Value</div>
+                    <div class="field-value field-value-currency"><%=ifnull(assetRecord.Sale_Value,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Disposal Value</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Disposal_Value,0).round(2)%> SAR</div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Invoice Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Invoice_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Approval Status</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Approval_Status,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Auction Status</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Auction_Report_Status,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Checklist Status</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_Sale_Checklist_Status,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Journal ID</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Journals,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Invoice ID</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Invoice1,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Journal Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Journal_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        <% } %>
+        
+        <!-- Section 10: Insurance Information -->
+        <div class="report-section">
+            <div class="section-header">10. INSURANCE INFORMATION</div>
+            <div class="field-grid">
+                <div class="field-item">
+                    <div class="field-label">Insurance Canceled?</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Asset_insurance_Canceled,"No")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Insurance Cancelled Date</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Insurance_cancelled_Date.toString("dd-MMM-yyyy"),"N/A")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Section 11: Additional Information -->
+        <div class="report-section">
+            <div class="section-header">11. ADDITIONAL INFORMATION</div>
+            <div class="field-grid field-grid-1">
+                <div class="field-item">
+                    <div class="field-label">Description</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Description,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Notes</div>
+                    <div class="field-value"><%=ifnull(assetRecord.Notes,"N/A")%></div>
+                </div>
+                <div class="field-item">
+                    <div class="field-label">Activity Logs</div>
+                    <div class="field-value" style="white-space: pre-wrap; max-height: 200px; overflow-y: auto;"><%=ifnull(assetRecord.Logs,"No activity logs")%></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- QR Code Section -->
+        <div class="qr-section">
+            <h3 style="margin-bottom: 15px; color: #2c3e50;">Asset QR Code</h3>
+            <div class="qr-placeholder">
+                <%=assetRecord.Bar_Code_QR_Code%>
+            </div>
+            <p style="font-size: 12px; color: #7f8c8d;">Scan to access asset details</p>
+        </div>
+        
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <div class="signature-box">
+                <div class="signature-line">
+                    <div class="signature-label">Prepared By</div>
+                    <div class="signature-name">_________________</div>
+                </div>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line">
+                    <div class="signature-label">Verified By</div>
+                    <div class="signature-name">_________________</div>
+                </div>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line">
+                    <div class="signature-label">Approved By</div>
+                    <div class="signature-name">_________________</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Report Footer -->
+        <div class="report-footer">
+            <p>This is a system-generated report from LogiGate Fixed Asset Management System</p>
+            <p>Report ID: <%=assetRecord.ID%> | Generated: <%=zoho.currenttime.toString("dd-MMM-yyyy hh:mm:ss a")%></p>
+            <p>© 2025 MARASAH COMPANY - All Rights Reserved</p>
+        </div>
+        
+        <%
+        }
+        else
+        {
+        %>
+            <div class="empty-state" style="padding: 100px;">
+                <h2>Asset Not Found</h2>
+                <p>The requested asset record could not be loaded.</p>
+            </div>
+        <%
+        }
+        %>
+    </div>
+</body>
+</html>
+<%}%>

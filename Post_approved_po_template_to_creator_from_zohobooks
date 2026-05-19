@@ -1,0 +1,142 @@
+
+purchaseorderID = purchaseorder.get("purchaseorder_id");
+purchaseorderdate = purchaseorder.get("date").toDate();
+organizationID = organization.get("organization_id");
+po = zoho.books.getRecordsByID("purchaseorders",organizationID,purchaseorderID,"zb_conn");
+// info po;
+poStatus = po.get("purchaseorder").get("status");
+info poStatus;
+if(poStatus == "approved" || poStatus == "open")
+{
+	getAll_temp = invokeurl
+	[
+		url :"https://www.zohoapis.sa/books/v3/purchaseorders/templates?organization_id=" + organizationID
+		type :GET
+		connection:"zb_conn"
+	];
+	// info getAll_temp ;
+	temp_ID = "";
+	for each  temps in getAll_temp.get("templates")
+	{
+		if(temps.get("template_id") == "1079000000129001")
+		{
+			temp_ID = temps.get("template_id");
+		}
+	}
+	updateResp = invokeurl
+	[
+		url :"https://www.zohoapis.sa/books/v3/purchaseorders/" + purchaseorderID + "/templates/" + temp_ID + "?organization_id=" + organizationID
+		type :PUT
+		connection:"zb_conn"
+	];
+	// 	info "Template update status :"+updateResp;
+	if(updateResp.get("code") == 0)
+	{
+		response = invokeurl
+		[
+			url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/Sheet1_Report1?criteria=Zoho_Books_ID.contains(\"" + purchaseorderID + "\")"
+			type :GET
+			connection:"zohobooks_conn"
+		];
+		// 		info response;
+		if(response.get("code") == 3000)
+		{
+			searchedRec = response.get("data").get(0);
+			searchedRec1 = searchedRec.get("ID");
+			assetCheckList = searchedRec.get("Asset_Inspection_Checklist_Rec_ID");
+			info assetCheckList;
+			if(assetCheckList == null || assetCheckList == "")
+			{
+				// 			searchedRec = "3694000002081067";
+				// 			info "Record ID:" + searchedRec;
+				result = invokeurl
+				[
+					url :"https://books.zoho.sa/api/v3/purchaseorders/" + purchaseorderID + "?accept=pdf&organization_id=" + organizationID
+					type :GET
+					connection:"z_books"
+				];
+				// info result;
+				result.setParamName("file");
+				// 			// info result;
+				uploadURL = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/Sheet1_Report1/" + searchedRec1 + "/Approved_PO_Document/upload";
+				resp = invokeurl
+				[
+					url :uploadURL
+					type :POST
+					files:result
+					connection:"zohobooks_conn"
+				];
+				info "File uploaded → " + resp;
+				lgPoRecID = searchedRec.get("Purchase_Order");
+				info "PO Rec ID:" + lgPoRecID.get("ID");
+				lgReqRecID = searchedRec.get("LogiRequest");
+				url_endpoint2 = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/LogiRequest_Report/" + lgReqRecID.get("ID") + "/Approved_PO/upload";
+				uploadeLGResp = invokeurl
+				[
+					url :url_endpoint2
+					type :POST
+					files:result
+					connection:"zohobooks_conn"
+				];
+				info "Uploaded response LGRequest:" + uploadeLGResp;
+				//updateApproval status start
+				// 				update approval status ends
+				// 			update status 
+				dataMap = Map();
+				dataMap.put("Status","PO Approved");
+				dataMap.put("PO_Approved_From_Books",true);
+				paramsList = List();
+				paramsList.add(dataMap);
+				payload = Map();
+				payload.put("data",paramsList);
+				updateResp = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/LogiRequest_Report/" + lgReqRecID.get("ID")
+					type :PATCH
+					parameters:payload.toString()
+					connection:"zohobooks_conn"
+				];
+				info "Update Status On Logirequest :" + updateResp;
+			}
+			else if(assetCheckList != null || assetCheckList == "")
+			{
+				result = invokeurl
+				[
+					url :"https://books.zoho.sa/api/v3/purchaseorders/" + purchaseorderID + "?accept=pdf&organization_id=" + organizationID
+					type :GET
+					connection:"z_books"
+				];
+				// info result;
+				result.setParamName("file");
+				// 			// info result;
+				uploadURL = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/Sheet1_Report1/" + searchedRec1 + "/Approved_PO_Document/upload";
+				resp = invokeurl
+				[
+					url :uploadURL
+					type :POST
+					files:result
+					connection:"zohobooks_conn"
+				];
+				info "File uploaded → " + resp;
+				dataMap3 = Map();
+				dataMap3.put("Status","PO Approved From Books");
+				paramsList1 = List();
+				paramsList1.add(dataMap3);
+				payload1 = Map();
+				payload1.put("data",paramsList1);
+				updateResp = invokeurl
+				[
+					url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/Asset_Receiving_Inspection_Checklist_Report/" + assetCheckList.toNumber()
+					type :PATCH
+					parameters:payload1.toString()
+					connection:"zohobooks_conn"
+				];
+				info "Update Status On Checklist :" + updateResp;
+			}
+		}
+		else
+		{
+			info "No record matched with this criteria";
+		}
+	}
+}

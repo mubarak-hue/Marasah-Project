@@ -1,1 +1,16 @@
 openUrl("https://creatorapp.zohopublic.sa/m.alsuhaimi_marasah/fixed-assets/record-pdf/LogiRequest_Report/" + input.ID + "/Logirequest_doc/g4SzVuaMe8URr4Jrtm2b7hTWGZy3qZt6T24JYvdrwkOzdrSnXwfYjyRME1E53T4yqpbdvPHdzqOv5FK9ADxN7jvDDPQkvDgrChPQ","new window");
+
+url1=" https://creatorapp.zohopublic.com/<APP OWNER NAME>/<APP NAME>/record-pdf/<REPORT NAME>/"+rec.ID+"/<REPORT LINK NAME>/<PUBLISH REPORT ENCRYPTED KEY>";
+file_resp = invokeurl
+[
+url :url1
+type :GET
+];
+file_resp.setparamname("file");
+sendfile = invokeurl
+[
+url :" https://creator.zoho.com/api/v2/<owner_name>/<appname>/report/<reportname>/<record_ID>/<Field_name>/upload"
+type :POST
+files:file_resp
+connection:"zoho_creator_connection"
+];

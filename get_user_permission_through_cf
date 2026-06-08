@@ -1,0 +1,9 @@
+user_permission = thisapp.permissions.loginUserProfile();
+		if(user_permission == "Administrator" || user_permission == "Write")
+		{
+			record_access_url = "https://creatorapp.zoho.sa/m.alsuhaimi_marasah/fixed-assets/#Report:All_Asset_Sale_Approval_Checklists?ID=" + chk_rec.ID;
+		}
+		else
+		{
+			record_access_url = "https://malsuhaimimarasah1.zohocreatorportal.sa/#Report:All_Asset_Sale_Approval_Checklists?ID=" + chk_rec.ID;
+		}

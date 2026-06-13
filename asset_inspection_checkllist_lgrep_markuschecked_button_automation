@@ -1,0 +1,81 @@
+
+if( ( input.Update_all_relevant_details_in_the_Asset_Master == "Completed" || input.Apply_Insurance == "Applied" ) && (input.Attach_GPS_Quotation.size() > 0 && input.Attach_GPS_Quotation != null) || input.Asset == null)
+{
+	// Quotation exists → Notify GM
+	ftuser = User_Master[Position == "GM"];
+	portalEmail = list();
+	orgEmail = list();
+	for each  user in ftuser
+	{
+		portalEmail.add(user.User_Email);
+		orgEmail.add(user.Organization_Email);
+	}
+	assetDet = Asset_Master_Entry[ID == input.Asset_Name];
+	email = portalEmail;
+	pushMessage = "The quotation for asset " + assetDet.Asset_Name + " (Reference: " + input.Asset_Checklist_Reference + ") has been added by Logistics and is now pending your approval.";
+	sub = "GM Approval Required – Quotation for GPS: " + assetDet.Asset_Name + " (Reference: " + input.Asset_Checklist_Reference + ")";
+	// Push notification
+	response = zoho.pushNotification(email,sub,pushMessage,"Checklist_GM",input.ID);
+	// Email
+	sendmail
+	[
+		from :"erp@marasah.com"
+		to :orgEmail
+		subject :sub
+		message :pushMessage
+	]
+	// Update logs and status
+	input.Logs = input.Logs + "\n Checked By: " + zoho.loginuser + " at: " + zoho.currenttime;
+	input.Status = "Quotation Added";
+	input.Done_By1 = User_Master[User_Email == zoho.loginuserid].User_Name;
+	if(input.Completed_On3 == null)
+	{
+		input.Completed_On3 = zoho.currentdate;
+	}
+	if(input.Completed_On1 == null)
+	{
+		input.Completed_On1 = zoho.currentdate;
+	}
+}
+else if((input.Attach_GPS_Quotation.size() < 0 && input.Attach_GPS_Quotation == null) || input.Asset != null)
+{
+	// No quotation → Notify Quotation Initiator
+	ftuser = User_Master[Position == "Quotation Initiator"];
+	portalEmail = list();
+	orgEmail = list();
+	for each  user in ftuser
+	{
+		portalEmail.add(user.User_Email);
+		orgEmail.add(user.Organization_Email);
+	}
+	assetDet = Asset_Master_Entry[ID == input.Asset_Name];
+	email = portalEmail;
+	pushMessage = "Asset checklist for " + assetDet.Asset_Name + " (Reference: " + input.Asset_Checklist_Reference + ") has been verified by Logistics and is awaiting your verification.";
+	sub = "BSCR Verification Required – " + assetDet.Asset_Name + " (Reference: " + input.Asset_Checklist_Reference + ")";
+	// Push notification
+	response = zoho.pushNotification(email,sub,pushMessage,"Asset_Receiving_Inspection_Checklist_Report",input.ID);
+	// Email
+	sendmail
+	[
+		from :"erp@marasah.com"
+		to :orgEmail
+		subject :sub
+		message :pushMessage
+	]
+	// Update logs and status
+	input.Logs = input.Logs + "\n Checked By: " + zoho.loginuser + " at: " + zoho.currenttime;
+	input.Status = "Verified by Logistics Department";
+	input.Done_By1 = User_Master[User_Email == zoho.loginuserid].User_Name;
+	if(input.Completed_On3 == null)
+	{
+		input.Completed_On3 = zoho.currentdate;
+	}
+	if(input.Completed_On1 == null)
+	{
+		input.Completed_On1 = zoho.currentdate;
+	}
+}
+else
+{
+	openUrl("#Page:Asset_checklist_error_popup","popup window");
+}

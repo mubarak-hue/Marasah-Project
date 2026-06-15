@@ -1,0 +1,21 @@
+for each  val in ftexpense.Expense_Documents
+			{
+				url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/finance-operations/report/All_Expenses/" + ftexpense.ID + "/Expense_Documents/download?filepath=" + val;
+				var = invokeurl
+				[
+				url :url_endpoint
+				type :GET
+				connection:"za_connections"
+				];
+				var.setParamName("attachment");
+				file_list.add(var);
+			}
+			url = "https://www.zohoapis.sa/books/v3/expenses/" + expense_ID + "/attachment?organization_id=" + org;
+			result = invokeurl
+			[
+				url :url
+				type :POST
+				files:file_list
+				connection:"zohobooks"
+			];
+			info result;

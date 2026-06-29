@@ -1,0 +1,81 @@
+varAsset = Asset_Master_Entry[ID == rec];
+	expenseAmount = totalExpenseAmount.toDecimal();
+	expenseDate = date_of_expense.toDate();
+	expenseMonthEnd = expenseDate.eomonth(0);
+	// ---------------- Asset End ----------------
+	assetEndMonth = varAsset.Warranty_Expiration_Date.toDate().eomonth(0);
+	// ---------------- Identify Opening Value ----------------
+	openingAssetValue = 0.0;
+	startFound = false;
+	for each  recID in varAsset.Calculated_Depreciation
+	{
+		subRec = Run_Completion_Subform[ID == recID];
+		if(subRec != null)
+		{
+			recMonthEnd = subRec.Current_Date.toDate().eomonth(0);
+			// Pick last value BEFORE expense month
+			if(recMonthEnd < expenseMonthEnd)
+			{
+				openingAssetValue = subRec.Current_Value.toDecimal();
+				startFound = true;
+			}
+		}
+	}
+	if(!startFound)
+	{
+		info "No opening value found before expense date.";
+		return;
+	}
+	// Add betterment
+	openingAssetValue = openingAssetValue + expenseAmount;
+	// ---------------- Collect Remaining Months ----------------
+	monthDates = List();
+	for each  recID in varAsset.Calculated_Depreciation
+	{
+		subRec = Run_Completion_Subform[ID == recID];
+		if(subRec != null)
+		{
+			recMonthEnd = subRec.Current_Date.toDate().eomonth(0);
+			if(recMonthEnd >= expenseMonthEnd && recMonthEnd <= assetEndMonth)
+			{
+				monthDates.add(recMonthEnd);
+			}
+		}
+	}
+	monthDates = monthDates.distinct();
+	monthDates.sort(true);
+	remainingMonths = monthDates.size();
+	if(remainingMonths <= 0)
+	{
+		info "No months found for recalculation.";
+		return;
+	}
+	// ---------------- Straight Line Depreciation ----------------
+	monthlyDep = (openingAssetValue / remainingMonths).round(2);
+	remainingAssetValue = openingAssetValue;
+	cumulativeDep = 0.0;
+	lastMonth = monthDates.get(monthDates.size() - 1);
+	// ---------------- Apply Depreciation ----------------
+	for each  dt in monthDates
+	{
+		runRec = Run_Completion_Subform[Current_Date == dt.toDate() && Asset_Master_Entry_Asset_Unique_ID == varAsset.ID];
+		if(runRec != null)
+		{
+			openingValue = remainingAssetValue;
+			if(dt == lastMonth)
+			{
+				monthDep = openingValue.round(2);
+			}
+			else
+			{
+				monthDep = monthlyDep;
+			}
+// 			cumulativeDep = (cumulativeDep + monthDep).round(2);
+// 			remainingAssetValue = (openingValue - monthDep).round(2);
+// 			runRec.Monthly_Depreciation=monthDep;
+// 			runRec.Cumulated_Depreciation_Value=cumulativeDep;
+// 			runRec.Current_Value=toString(remainingAssetValue);
+			info "Month: " + dt.toString("MMM-yyyy") + " | Opening: " + openingValue + " | Dep: " + monthDep + " | Closing: " + remainingAssetValue;
+		}
+	}
+	info "Depreciation recalculated from expense date successfully.";

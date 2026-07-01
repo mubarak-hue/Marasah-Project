@@ -1,0 +1,442 @@
+void finance_gate.post_invoice_to_fg(int invID)
+{
+	org = "150000132545";
+	// 	info "invoice creating";
+	ft_invoice = Invoices[ID == invID];
+	ft_customer = Add_Customer[ID == ft_invoice.Customer_Name];
+	customerID = ft_customer.Zoho_Books_Id;
+	invoiceDate = ft_invoice.Invoice_Date;
+	formated_inv_date = invoiceDate.toString("yyyy-MM-dd");
+	dueDate = ft_invoice.Due_Date;
+	formated_due_date = dueDate.toString("yyyy-MM-dd");
+	// 	supply_date = ft_invoice.Supply_Date;
+	// 	formatted_supply_date = supply_date.toString("yyyy-MM-dd");
+	invoicemp = Map();
+	invoicemp.put("customer_id",customerID);
+	invoicemp.put("reference_number",ft_invoice.Order_Number);
+	invoicemp.put("date",formated_inv_date);
+	invoicemp.put("payment_terms_label",ft_invoice.Terms);
+	invoicemp.put("due_date",formated_due_date);
+	invoicemp.put("place_of_supply",ft_invoice.Place_of_Supply);
+	// 	invoicemp.put("supply_date",ft_invo);
+	invoicemp.put("special_transaction_type",ft_invoice.Transaction_Type.toLowerCase());
+	invoicemp.put("subject_content",ft_invoice.Notes);
+	asset_sales_dr_account = 1079000000199605;
+	asset_sale_value = List();
+	lineList = List();
+	for each  item in ft_invoice.Item_Details
+	{
+		l_map = Map();
+		if(item.Asset != null)
+		{
+			asset = Asset_Master_Entry[ID == item.Asset];
+			if(asset != null)
+			{
+				l_map.put("name",asset.Asset_Unique_ID + " - " + asset.Asset_Name);
+				ft_dep = Run_Completion_Subform[Asset_Master_Entry == asset.ID && Current_Date >= asset.Purchase_Date && Current_Date <= eomonth(zoho.currentdate,0)];
+				asset_total_dep_value = 0;
+				for each  dep in ft_dep
+				{
+					asset_total_dep_value = asset_total_dep_value + ifnull(dep.Monthly_Depreciation.toDecimal(),0.00);
+				}
+				asset_type = Asset_Type[ID == asset.Asset_Type];
+				rel_ass_acc = Chart_of_Accounts[ID == asset_type.Asset_Account].Zoho_Books_ID;
+				rel_dep_acc = Chart_of_Accounts[ID == asset_type.Depreciation_Account].Zoho_Books_ID;
+				// 				l_map.put("account_id",rel_ass_acc);
+				l_map.put("account_id",asset_sales_dr_account);
+			}
+			else
+			{
+				info "Asset not found";
+				return;
+			}
+			l_map.put("quantity",item.Quantity);
+			l_map.put("rate",item.Sales_Value);
+			l_map.put("discount",item.Discount);
+			if(item.Tax != null)
+			{
+				tax_ = Tax[ID == item.Tax];
+				if(tax_.Tax_Name == "Standard Rate")
+				{
+					tax_id = "1079000000018043";
+				}
+				else
+				{
+					tax_id = "1079000000018049";
+				}
+			}
+			l_map.put("tax_id",tax_id);
+			reportedTagsList = List();
+			project_rec_id = null;
+			if(item.Project != null)
+			{
+				projects = Projects[ID == item.Project];
+				projectID = projects.Zoho_Books_ID;
+				l_map.put("project_id",projectID);
+				getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+				project = getProjects.get("project");
+				contractNo = "";
+				for each  ln in project.get("custom_fields")
+				{
+					if(ln.get("field_id") == "1079000002720673")
+					{
+						contractNo = ln.get("value");
+						info "Con No :" + contractNo;
+					}
+				}
+				if(contractNo != "")
+				{
+					cntrcts = Project_Contract_Nos[Contract_No == contractNo];
+					reportedTagMap = Map();
+					reportedTagMap.put("tag_option_id",cntrcts.Tag_Opt_ID);
+					reportedTagMap.put("tag_id",cntrcts.Zoho_Books_ID);
+					reportedTagsList.add(reportedTagMap);
+				}
+			}
+			if(item.Branch == "Head Office")
+			{
+				info "headoffice branch ";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_option_id","1079000000043113");
+				reportedTagMap.put("tag_id","1079000000000510");
+				reportedTagsList.add(reportedTagMap);
+			}
+			else if(item.Branch == "Haniya Yard")
+			{
+				info "haniya yard";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_option_id","1079000000043111");
+				reportedTagMap.put("tag_id","1079000000000510");
+				reportedTagsList.add(reportedTagMap);
+			}
+			else if(item.Branch == "Abu Maan Yard")
+			{
+				info "Abu Maan Yard";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_option_id","1079000003175766");
+				reportedTagMap.put("tag_id","1079000000000510");
+				reportedTagsList.add(reportedTagMap);
+			}
+			// 		departments
+			if(item.Department == "Ductwork Department")
+			{
+				info "ductwork department";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_id","1079000000000512");
+				reportedTagMap.put("tag_option_id","1079000000049067");
+				reportedTagsList.add(reportedTagMap);
+			}
+			else if(item.Department == "Industrial Services Department")
+			{
+				info "industrial service departmet ";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_id","1079000000000512");
+				reportedTagMap.put("tag_option_id","1079000000049065");
+				reportedTagsList.add(reportedTagMap);
+			}
+			else if(item.Department == "Administration Department")
+			{
+				info "Adminstrative Department";
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_id","1079000000000512");
+				reportedTagMap.put("tag_option_id","1079000000073145");
+				reportedTagsList.add(reportedTagMap);
+			}
+			l_map.put("tags",reportedTagsList);
+			l_map.put("item_total",item.Amount);
+			lineList.add(l_map);
+			asset_sale_value.add({"Asset_ID":asset.ID,"sale_value":item.Sales_Value,"ass_account_id":rel_ass_acc,"dep_acc_id":rel_dep_acc,"total_dep_value":asset_total_dep_value,"project":project_rec_id,"reporting_tag":reportedTagsList});
+		}
+	}
+	// 	creating Journals
+	journalmp = Map();
+	journalmp.put("journal_date",formated_inv_date);
+	journalmp.put("entry_number",ft_invoice.Invoice);
+	journalmp.put("reference_number",ft_invoice.Order_Number);
+	journalmp.put("notes",ft_invoice.Notes);
+	journalmp.put("journal_type","both");
+	journalmp.put("currency_id","1079000000006131");
+	journalmp.put("status","draft");
+	// 	published
+	// 	journalmp.put("exchange_rate",ft_jrnl.Exchange_Rate);
+	j_lines = List();
+	if(asset_sale_value.size() > 0)
+	{
+		for each  depAsset in asset_sale_value
+		{
+			Asset_selling_value = depAsset.get("sale_value");
+			assetRec = Asset_Master_Entry[ID == depAsset.get("Asset_ID")];
+			t_dep_value = depAsset.get("total_dep_value");
+			dr_total_deprection = depAsset.get("dep_acc_id");
+			ass_dep_acc = depAsset.get("dep_acc_id");
+			ass_acc = depAsset.get("ass_account_id");
+			// Assets Available for Sale - 	123001 - fg_rec_id
+			dain_loss_acc = 1079000005433537;
+			//Gain/Loss on Disposal of PPE ( ASSET) - 540001 - fg_rec_id
+			//accumulated_depreciation_debit 
+			j_lines.add({"account_id":ass_dep_acc,"debit_or_credit":"debit","description":"Accumulated Depreciation Reversal | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(t_dep_value,0.00),"project_id":ifnull(depAsset.get("project"),null),"tags":depAsset.get("reporting_tag")});
+			// 			journal_total = journal_total + ifnull(t_dep_value,0.00);
+			// 		sale of debit 
+			j_lines.add({"account_id":asset_sales_dr_account,"debit_or_credit":"debit","description":"Proceeds from Sale of Asset | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(Asset_selling_value,0.00),"project_id":ifnull(depAsset.get("project"),null),"tags":depAsset.get("reporting_tag")});
+			// 			journal_total = journal_total + ifnull(Asset_selling_value,0.00);
+			// 		purchase of asset 
+			j_lines.add({"account_id":ass_acc,"debit_or_credit":"credit","description":"Sale of Asset | " + assetRec.Asset_Name + " (" + assetRec.Asset_Unique_ID + ")","amount":ifnull(assetRec.Purchase_Value1,0.00),"project_id":ifnull(depAsset.get("project"),null),"tags":depAsset.get("reporting_tag")});
+			// 			journal_total = journal_total + ifnull(assetRec.Purchase_Value1,0.00);
+			// 		gain loss cr _ dr 
+			nbv = ifnull(assetRec.Purchase_Value1,0.00) - ifnull(t_dep_value,0.00);
+			sale_value = ifnull(Asset_selling_value,0.00);
+			gain_loss = sale_value - nbv;
+			if(gain_loss >= 0)
+			{
+				//info "Gain on sale: " + gain_loss;
+				j_lines.add({"account_id":dain_loss_acc,"debit_or_credit":"credit","description":"Gain recognized on Sale of " + assetRec.Asset_Name,"amount":ifnull(gain_loss,0.00),"project_id":ifnull(depAsset.get("project"),null),"tags":depAsset.get("reporting_tag")});
+			}
+			else
+			{
+				//info "Loss on sale: " + gain_loss;
+				loss_amount = gain_loss.abs();
+				j_lines.add({"account_id":dain_loss_acc,"debit_or_credit":"debit","description":"Loss recognized on Sale of " + assetRec.Asset_Name,"amount":ifnull(loss_amount,0.00),"Project_Name":ifnull(depAsset.get("project"),null),"tags":depAsset.get("reporting_tag")});
+			}
+		}
+		journalmp.put("line_items",j_lines);
+		// 	info journalmp;
+		existingJournalID = ft_invoice.FG_Journal;
+		journal_id = null;
+		try 
+		{
+			if(existingJournalID != null && existingJournalID != "")
+			{
+				// Journal exists - UPDATE it
+				info "Journal already exists: " + existingJournalID + " - Updating...";
+				update_resp = zoho.books.updateRecord("journals",org,existingJournalID,journalmp,"zohobooks3");
+				info "Journal update message: " + update_resp.get("message");
+				if(update_resp.get("code") == 0)
+				{
+					journal_id = existingJournalID;
+					info "Journal updated successfully: " + journal_id;
+				}
+				else
+				{
+					// Update failed, create new
+					info "Journal update failed, creating new...";
+					crerate_resp = zoho.books.createRecord("journals",org,journalmp,"zohobooks3");
+					if(crerate_resp.get("code") == 0)
+					{
+						journals = crerate_resp.get("journal");
+						journal_id = journals.get("journal_id");
+						ft_invoice.FG_Journal=journals.get("journal_id");
+						info "New journal created: " + journal_id;
+					}
+				}
+			}
+			else
+			{
+				// No journal - CREATE new
+				info "Creating new journal... second phase";
+				info journalmp;
+				crerate_resp = zoho.books.createRecord("journals",org,journalmp,"zohobooks3");
+				info "Journals created Message :" + crerate_resp.get("message");
+				if(crerate_resp.get("code") == 0)
+				{
+					journals = crerate_resp.get("journal");
+					journal_id = journals.get("journal_id");
+					info "Journal ID : " + journal_id;
+					ft_invoice.FG_Journal=journal_id;
+					user_mas = User_Master[Position == "Accounting & Finance Manager"];
+					pushMessage = "Request " + ft_invoice.Invoice + ": invoivce Journal posted successfully. This record has been posted to Zoho Books";
+					sub = "Invoice Journal Posted Successfully – : " + ft_invoice.Invoice;
+					response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Invoices",ft_invoice.ID);
+					sendmail
+					[
+						from :"erp@marasah.com"
+						to :user_mas.Organization_Email
+						subject :sub
+						message :pushMessage
+					]
+				}
+			}
+			info "Journal operation complete. Proceeding to invoice...";
+			invoicemp.put("line_items",lineList);
+			invoicemp.put("sub_total",ft_invoice.Sub_Total);
+			invoicemp.put("tax_total",ft_invoice.Tax_Total);
+			invoicemp.put("total",ft_invoice.Invoice_Amount);
+			param = Map();
+			param.put("JSONString",invoicemp);
+			existingInvoiceID = ft_invoice.FG_Invoice_ID;
+			invoiceID = null;
+			try 
+			{
+				if(existingInvoiceID != null && existingInvoiceID != "")
+				{
+					// Invoice exists - UPDATE it
+					info "Invoice already exists: " + existingInvoiceID + " - Updating...";
+					updateInvoice = zoho.books.updateRecord("invoices",org,existingInvoiceID,invoicemp,"zohobooks3");
+					info "Invoice update message: " + updateInvoice.get("message");
+					if(updateInvoice.get("code") == 0)
+					{
+						invoiceID = existingInvoiceID;
+						info "Invoice updated successfully: " + invoiceID;
+						ft_invoice.Invoice_created_successfully=true;
+						ft_invoice.Logs=ft_invoice.Logs + "\n Updated by :" + zoho.loginuser + " at :" + zoho.currenttime;
+						ft_invoice.Status="Invoice Updated by A&F Manager";
+					}
+				}
+				else
+				{
+					// No invoice - CREATE new
+					info "Creating new invoice...";
+					createInvoice = zoho.books.createRecord("invoices",org,invoicemp,"zohobooks3");
+					info "Invoice created messge :" + createInvoice.get("message");
+					if(createInvoice.get("code") == 0)
+					{
+						invoices = createInvoice.get("invoice");
+						invoiceID = invoices.get("invoice_id");
+						info "Invoice ID :" + invoiceID;
+						ft_invoice.FG_Invoice_ID=invoiceID;
+						ft_invoice.Zoho_Books_Id=invoiceID;
+						ft_invoice.Logs=ft_invoice.Logs + "\n Created by :" + zoho.loginuser + " at :" + zoho.currenttime;
+						ft_invoice.Status="Invoice Generated by A&F Manager";
+					}
+				}
+				// ================================================
+				// UPDATE ASSETS
+				// ================================================
+				for each  assetID in asset_sale_value
+				{
+					asset_mas = Asset_Master_Entry[ID == assetID.get("Asset_ID")];
+					asset_mas.Journals=journal_id;
+					asset_mas.Invoice1=invoiceID;
+					asset_mas.Customer=ft_invoice.Customer_Name;
+					asset_mas.Invoice_Date=ft_invoice.Invoice_Date;
+					asset_mas.Sale_Value=assetID.get("sale_value");
+					asset_mas.Asset_Stage="Sold / Decommissioned";
+					if(asset_mas.New_Istimara != null && asset_mas.New_Istimara.size() > 0)
+					{
+						asset_mas.Approval_Status="Pending Government Compliance";
+						ftuser = User_Master[Position == "Government Complains"];
+						orgEmail = List();
+						portalEmail = List();
+						for each  user in ftuser
+						{
+							portalEmail.add(user.User_Email);
+							orgEmail.add(user.Organization_Email);
+						}
+						sub_gc = "Action Required: Insurance Cancellation Approval - " + asset_mas.Asset_Unique_ID;
+						pushMessage_gc = "A request has been submitted and is pending your review for insurance cancellation. Assetes :[ " + asset_mas.Asset_Unique_ID + " ] ";
+						resp = zoho.pushNotification({portalEmail},sub_gc,pushMessage_gc,"Asset_insurance_Cancellation",asset_mas.ID);
+						sendmail
+						[
+							from :"erp@marasah.com"
+							to :orgEmail
+							subject :sub_gc
+							message :pushMessage_gc
+						]
+					}
+					else
+					{
+						asset_mas.Approval_Status="A&F Manager Generated Invoice";
+					}
+					asset_mas.Asset_Status="Sold";
+					asset_mas.Logs=asset_mas.Logs + "\n Invoice generated by :" + zoho.loginuser + " at : " + zoho.currenttime;
+				}
+				// ================================================
+				// UPLOAD ATTACHMENTS (ONLY FOR NEW INVOICES)
+				// ================================================
+				if(existingInvoiceID == null || existingInvoiceID == "")
+				{
+					if(ft_invoice.Documents != null && ft_invoice.Documents.size() > 0)
+					{
+						docList = List();
+						for each  docpath in ft_invoice.Documents
+						{
+							url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Invoice_Report/" + ft_invoice.ID + "/Documents/download?filepath=" + docpath;
+							var = invokeurl
+							[
+								url :url_endpoint
+								type :GET
+								connection:"z_creator"
+							];
+							var.setParamName("attachment");
+							docList.add(var);
+							response = invokeurl
+							[
+								url :"https://www.zohoapis.sa/books/v3/invoices/" + invoiceID + "/attachment?organization_id=" + org
+								type :POST
+								files:var
+								connection:"zohobooks3"
+							];
+							info "post response _ documents :" + response;
+						}
+					}
+					if(ft_invoice.Attachment != "")
+					{
+						url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/fixed-assets/report/All_Invoice_Report/" + ft_invoice.ID + "/Attachment/download";
+						var = invokeurl
+						[
+							url :url_endpoint
+							type :GET
+							connection:"za_connections"
+						];
+						var.setparamName("attachment");
+						response = invokeurl
+						[
+							url :"https://www.zohoapis.sa/books/v3/invoices/" + invoiceID + "/attachment?organization_id=" + org
+							type :POST
+							files:var
+							connection:"zohobooks3"
+						];
+						info "post response_ attachment:" + response;
+					}
+				}
+				// ================================================
+				// SEND SUCCESS NOTIFICATION
+				// ================================================
+				user_mas = User_Master[Position == "Accounting & Finance Manager"];
+				pushMessage = "Request " + ft_invoice.Invoice + ": invoivce posted successfully. This record has been posted to Zoho Books";
+				sub = "Invoice Posted Successfully – : " + ft_invoice.Invoice;
+				response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Invoices",ft_invoice.ID);
+				sendmail
+				[
+					from :"erp@marasah.com"
+					to :user_mas.Organization_Email
+					subject :sub
+					message :pushMessage
+				]
+			}			catch (invErr)
+			{
+				info "System erro in Invoivce Creation :" + invErr;
+				ft_invoice.Status="Invoice Failed — Retry";
+				// 			ft_invoice.Error_Details="Journal OK (ID: " + journal_id + ") - Invoice Error: " + invErr;
+				user_mas = User_Master[Position == "Accounting & Finance Manager"];
+				pushMessage = "Request " + ft_invoice.Invoice + ": Invoice posting failed. Journal posted successfully (ID: " + journal_id + "). Please review and retry.";
+				sub = "Invoice Posting Failed (Journal OK) – Action Required: " + ft_invoice.Invoice;
+				response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Invoices",ft_invoice.ID);
+				sendmail
+				[
+					from :"erp@marasah.com"
+					to :user_mas.Organization_Email
+					subject :sub
+					message :pushMessage
+				]
+				return;
+			}
+		}		catch (e)
+		{
+			info "System Error in Journals Creation :" + e;
+			ft_invoice.Status="Failed to Post";
+			// 			ft_invoice.Error_Details=e;
+			user_mas = User_Master[Position == "Accounting & Finance Manager"];
+			pushMessage = "Request " + ft_invoice.Invoice + ": Invoice posting failed. This record has not been posted to Zoho Books. Please review and retry.";
+			sub = "Invoice Posting Failed – Action Required:: " + ft_invoice.Invoice;
+			response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Invoices",ft_invoice.ID);
+			sendmail
+			[
+				from :"erp@marasah.com"
+				to :user_mas.Organization_Email
+				subject :sub
+				message :pushMessage
+			]
+			return;
+		}
+	}
+}

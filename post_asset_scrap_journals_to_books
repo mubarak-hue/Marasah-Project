@@ -1,0 +1,412 @@
+void finance_gate.post_journals_to_fg_from_asset_sale_invoice(int recID)
+{
+	org = "150000132545";
+	jrnl = Journals[ID == recID];
+	getAll_project = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/All_Projects"
+		type :GET
+		connection:"z_creator"
+	];
+	// 	info "FG Project :"+getAll_project;
+	prt_date = getAll_project.get("data");
+	fg_project_list = List();
+	for each  project in prt_date
+	{
+		fg_project_list.add({"books_id":project.get("Zoho_Books_ID"),"project_record_id":project.get("ID")});
+	}
+	fg_chart_of_acc = invokeurl
+	[
+		url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/finance-operations/report/chartofaccounts_report"
+		type :GET
+		connection:"z_creator"
+	];
+	acc_data = fg_chart_of_acc.get("data");
+	acc_details = List();
+	for each  acc in acc_data
+	{
+		acc_details.add({"account_code":acc.get("account_code"),"account_record_id":acc.get("ID")});
+	}
+	jMap = Map();
+	jMap.put("entry_number",jrnl.Journal);
+	jMap.put("reference_number",jrnl.Reference);
+	fjd = toString(jrnl.Date_field,"yyyy-MM-dd");
+	jMap.put("journal_date",fjd);
+	// 	jMap.put("currency","SA");
+	jMap.put("currency_id","1079000000006131");
+	jMap.put("journal_type","both");
+	jMap.put("Status","draft");
+	// 	published
+	jMap.put("exchange_rate",ifnull(jrnl.Exchange_Rate,0));
+	j_items = List();
+	asset_master = List();
+	processedAssets = List();
+	for each  jitem in jrnl.Journal_Items
+	{
+		assetID = jitem.Asset_Master_Entry;
+		if(processedAssets.contains(assetID))
+		{
+			info "Skipping duplicate asset: " + assetID;
+			continue;
+		}
+		processedAssets.add(assetID);
+		desc = jitem.Description;
+		asset = Asset_Master_Entry[ID == assetID];
+		if(asset == null)
+		{
+			info "Asset not found: " + assetID;
+			continue;
+		}
+		asset_type = Asset_Type[ID == asset.Asset_Type];
+		asset_acc = Chart_of_Accounts[ID == asset_type.Asset_Account];
+		asset_dep_acc = Chart_of_Accounts[ID == asset_type.Depreciation_Account];
+		ft_dep = Run_Completion_Subform[Asset_Master_Entry == asset.ID && Current_Date >= asset.Purchase_Date && Current_Date <= eomonth(zoho.currentdate,0)];
+		asset_total_dep_value = 0;
+		for each  dep in ft_dep
+		{
+			asset_total_dep_value = asset_total_dep_value + ifnull(dep.Monthly_Depreciation.toDecimal(),0.00);
+		}
+		reportedTagsList = List();
+		projectID = null;
+		if(jitem.Project != null)
+		{
+			projects = Projects[ID == jitem.Project];
+			projectID = projects.Zoho_Books_ID;
+			getProjects = zoho.books.getRecordsByID("projects",org,projectID.toLong(),"zohobooks3");
+			project = getProjects.get("project");
+			contractNo = "";
+			for each  ln in project.get("custom_fields")
+			{
+				if(ln.get("field_id") == "1079000002720673")
+				{
+					contractNo = ln.get("value");
+					// 					info "Con No :" + contractNo;
+				}
+			}
+			if(contractNo != "")
+			{
+				cntrcts = Project_Contract_Nos[Contract_No == contractNo];
+				reportedTagMap = Map();
+				reportedTagMap.put("tag_option_id",cntrcts.Tag_Opt_ID);
+				reportedTagMap.put("tag_id",cntrcts.Zoho_Books_ID);
+				reportedTagsList.add(reportedTagMap);
+			}
+		}
+		// Branch tags
+		if(jitem.Branch == "Head Office")
+		{
+			// 			info "headoffice branch ";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_option_id","1079000000043113");
+			reportedTagMap.put("tag_id","1079000000000510");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(jitem.Branch == "Haniya Yard")
+		{
+			// 			info "haniya yard";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_option_id","1079000000043111");
+			reportedTagMap.put("tag_id","1079000000000510");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(jitem.Branch == "Abu Maan Yard")
+		{
+			// 			info "Abu Maan Yard";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_option_id","1079000003175766");
+			reportedTagMap.put("tag_id","1079000000000510");
+			reportedTagsList.add(reportedTagMap);
+		}
+		// Department tags
+		if(jitem.Department == "Ductwork Department")
+		{
+			// 			info "ductwork department";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagMap.put("tag_option_id","1079000000049067");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(jitem.Department == "Industrial Services Department")
+		{
+			// 			info "industrial service departmet ";
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagMap.put("tag_option_id","1079000000049065");
+			reportedTagsList.add(reportedTagMap);
+		}
+		else if(jitem.Department == "Adminstrative Department")
+		{
+			reportedTagMap = Map();
+			reportedTagMap.put("tag_option_id","1079000000073145");
+			reportedTagMap.put("tag_id","1079000000000512");
+			reportedTagsList.add(reportedTagMap);
+		}
+		purchaseValue = ifnull(asset.Purchase_Value1,0.00);
+		bbv = purchaseValue - ifnull(asset_total_dep_value,0.00);
+		asset_master.add({"Asset_ID":asset.ID,"Dispoal_value":bbv});
+		dain_loss_acc = 1079000005433537;
+		if(asset_total_dep_value > 0)
+		{
+			j_items.add({"account_id":asset_dep_acc.Zoho_Books_ID,"debit_or_credit":"debit","description":"Accumulated Depreciation | " + desc,"amount":ifnull(asset_total_dep_value,0.00),"bcy_amount":ifnull(asset_total_dep_value,0.00),"project_id":ifnull(projectID,null),"tags":reportedTagsList});
+			// LINE 2: Debit Loss on Disposal
+			j_items.add({"account_id":dain_loss_acc,"debit_or_credit":"debit","description":"Loss recognized on Scrap/Write-off: " + desc,"amount":ifnull(bbv,0.00),"bcy_amount":ifnull(bbv,0.00),"project_id":ifnull(projectID,null),"tags":reportedTagsList});
+			// 		info "Asset gain / loss amount :"+ bbv ;
+			// LINE 3: Credit Asset Account
+			j_items.add({"account_id":asset_acc.Zoho_Books_ID,"debit_or_credit":"credit","description":"Purchase of Asset: " + desc,"amount":ifnull(purchaseValue,0.00),"bcy_amount":ifnull(purchaseValue,0.00),"project_id":ifnull(projectID,null),"tags":reportedTagsList});
+		}
+	}
+	// ZERO DEPRECIATION PATH — skip journal, update asset directly
+	// ══════════════════════════════════════════════════════
+	if(j_items.size() == 0)
+	{
+		info "No depreciation found — skipping journal creation, updating asset master directly.";
+		ass_list_zero = List();
+		asset_rec_ID_zero = "";
+		for each  xyz in asset_master
+		{
+			asset_mas = Asset_Master_Entry[ID == xyz.get("Asset_ID")];
+			if(asset_mas != null)
+			{
+				asset_mas.Journal_Date=jrnl.Date_field;
+				asset_mas.Disposal_Value=ifnull(xyz.get("Dispoal_value"),0);
+				asset_mas.Asset_Stage="Scrap / Write-Off";
+				asset_mas.Asset_Status="Scrap / Write-Off";
+				asset_mas.Approval_Status="Asset Disposed as Scrap / Write-Off";
+				asset_mas.Logs=asset_mas.Logs + "\n[" + zoho.currenttime + "] No depreciation — Journal skipped. Asset closed as Scrap/Write-Off by " + zoho.loginuser;
+				ass_list_zero.add(asset_mas.Asset_Unique_ID + " - " + asset_mas.Asset_Name);
+				asset_rec_ID_zero = asset_mas.ID;
+			}
+		}
+		jrnl.Status="Journal Skipped — Zero Depreciation";
+		jrnl.Logs=jrnl.Logs + "\n[" + zoho.currenttime + "] No depreciation found — journal not required. Asset(s) closed directly by " + zoho.loginuser;
+		if(ass_list_zero.size() > 0)
+		{
+			use_ms_zero = User_Master[Position == "Accounting & Finance Manager"];
+			pm_zero = "Request " + jrnl.Reference + ": No depreciation found for asset(s) [" + ass_list_zero + "]. Journal was not required. Asset(s) have been closed as Scrap / Write-Off directly.";
+			sub_zero = "Scrap / Write-Off Completed (No Journal) – " + jrnl.Reference;
+			response_zero = zoho.pushNotification({use_ms_zero.Organization_Email},sub_zero,pm_zero,"All_Journals",jrnl.ID);
+			sendmail
+			[
+				from :"erp@marasah.com"
+				to :use_ms_zero.Organization_Email
+				subject :sub_zero
+				message :pm_zero
+			]
+		}
+		return;
+	}
+	// ══════════════════════════════════════════════════════
+	jMap.put("line_items",j_items);
+	jMap.put("notes",jrnl.Notes);
+	// 	info "Local Map :" + jMap;
+	// 	otherMap = Map();
+	try 
+	{
+		existingJournalID = jrnl.Zoho_books_ID;
+		xpRecordID = null;
+		journalAction = "";
+		if(existingJournalID != null && existingJournalID != "")
+		{
+			info "Journal already exists in Books (ID: " + existingJournalID + ") - Updating...";
+			journalAction = "update";
+			update_resp = zoho.books.updateRecord("journals",org,existingJournalID,jMap,"zohobooks3");
+			info "Journal update response: " + update_resp.get("message");
+			if(update_resp.get("code") == 0)
+			{
+				xpRecordID = existingJournalID;
+				info "Journal updated successfully in Books: " + xpRecordID;
+				jrnl.Status="Journal Updated by A&F Manager";
+				jrnl.Logs=jrnl.Logs + "\n[" + zoho.currenttime + "] Journal updated in Books by " + zoho.loginuser;
+			}
+			else
+			{
+				// Update failed, try creating new
+				info " Journal update failed, creating new...";
+				create_resp = zoho.books.createRecord("journals",org,jMap,"zohobooks3");
+				if(create_resp.get("code") == 0)
+				{
+					journal = create_resp.get("journal");
+					xpRecordID = journal.get("journal_id");
+					jrnl.Zoho_books_ID=xpRecordID;
+					jrnl.Journal_created_successfully=true;
+					journalAction = "create";
+					info "New journal created in Books: " + xpRecordID;
+				}
+				else
+				{
+					info "Journal create also failed: " + create_resp.get("message");
+				}
+			}
+		}
+		else
+		{
+			info "No existing journal - Creating new in Books...";
+			journalAction = "create";
+			// 			info "local map ;"+ jMap;
+			create_resp = zoho.books.createRecord("journals",org,jMap,"zohobooks3");
+			info "Journal create response: " + create_resp.get("message");
+			if(create_resp.get("code") == 0)
+			{
+				journal = create_resp.get("journal");
+				xpRecordID = journal.get("journal_id");
+				jrnl.Zoho_books_ID=xpRecordID;
+				jrnl.Journal_created_successfully=true;
+				journalAction = "create";
+				info "New journal created in Books: " + xpRecordID;
+				// // 				info "Journal created in Books: " + xpRecordID;
+				// 				// Also create in Creator for tracking
+				// // 				crt_sales_jrnl = zoho.creator.createRecord("m.alsuhaimi_marasah","finance-operations","Journals",jMap,otherMap,"z_creator");
+				// 				crt_sales_jrnl = zoho.books.createRecord("journals", org, jMap,"z_creator");
+				// 				info crt_sales_jrnl;
+				// 				info "Creator journal record: " + crt_sales_jrnl.get("message");
+			}
+			else
+			{
+				info "Journal creation failed: " + create_resp.get("message");
+			}
+		}
+		if(xpRecordID != null && xpRecordID != "")
+		{
+			info "Journal operation successful (ID: " + xpRecordID + ")";
+			if(journalAction == "create")
+			{
+				jrnl.Status="Journal Generated by A&F Manager";
+				jrnl.Logs=jrnl.Logs + "\n[" + zoho.currenttime + "] Journal created in Books by " + zoho.loginuser;
+			}
+			user_mas = User_Master[Position == "Accounting & Finance Manager"];
+			pushMessage = "Request " + jrnl.Reference + ": Journal " + journalAction + "d successfully. This record has been posted to Zoho Books (ID: " + xpRecordID + ")";
+			sub = "Journal " + journalAction.toUpperCase() + "ED Successfully: " + jrnl.Reference;
+			response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Journals",jrnl.ID);
+			sendmail
+			[
+				from :"erp@marasah.com"
+				to :user_mas.Organization_Email
+				subject :sub
+				message :pushMessage
+			]
+			// ================================================
+			// UPDATE ASSET RECORDS
+			// ================================================
+			info "Updating asset records...";
+			ass_list = List();
+			asset_rec_ID = "";
+			for each  xyz in asset_master
+			{
+				asset_mas = Asset_Master_Entry[ID == xyz.get("Asset_ID")];
+				if(asset_mas != null)
+				{
+					asset_mas.Journal_Date=jrnl.Date_field;
+					asset_mas.Disposal_Value=ifnull(xyz.get("Dispoal_value"),0);
+					asset_mas.Asset_Stage="Scrap / Write-Off";
+					asset_mas.Asset_Status="Scrap / Write-Off";
+					asset_mas.Approval_Status="Asset Disposed as Scrap / Write-Off";
+					asset_mas.Journals=xpRecordID;
+					asset_mas.Logs=asset_mas.Logs + "\n[" + zoho.currenttime + "] Journal " + journalAction + "d by " + zoho.loginuser + " (ID: " + xpRecordID + ")";
+					ass_list.add(asset_mas.Asset_Unique_ID + " - " + asset_mas.Asset_Name);
+					asset_rec_ID = asset_mas.ID;
+				}
+			}
+			if(ass_list.size() > 0)
+			{
+				use_ms = User_Master[Position == "Logistics Manager" || Position == "GM" || Position == "CEO"];
+				portal_email = List();
+				organization_email = List();
+				for each  u_val in user_mas
+				{
+					portal_email.add(u_val.User_Email);
+					organization_email.add(u_val.Organization_Email);
+				}
+				pm = "Request " + jrnl.Reference + ": Accounts & Finance Manager has successfully " + journalAction + "d the disposal journal entries. The asset(s) [" + ass_list + "] are now officially closed as Scrap / Write-Off.";
+				sub_msg = "Scrap / Write-Off Process Completed – " + jrnl.Reference;
+				response5 = zoho.pushNotification({portal_email},sub_msg,pm,"Asset_List",asset_rec_ID.toLong());
+			}
+			// ================================================
+			// UPLOAD ATTACHMENTS (ONLY FOR NEW JOURNALS)
+			// ================================================
+			if(journalAction == "create")
+			{
+				info "Uploading attachments...";
+				// Upload Documents
+				if(jrnl.Document != null && jrnl.Document.size() > 0)
+				{
+					docList = List();
+					for each  docpath in jrnl.Document
+					{
+						try 
+						{
+							url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Journals/" + jrnl.ID + "/Document/download?filepath=" + docpath;
+							var = invokeurl
+							[
+								url :url_endpoint
+								type :GET
+								connection:"z_creator"
+							];
+							var.setParamName("attachment");
+							docList.add(var);
+							response1 = invokeurl
+							[
+								url :"https://www.zohoapis.sa/books/v3/journals/" + xpRecordID + "/attachment?organization_id=" + org
+								type :POST
+								files:var
+								connection:"zohobooks3"
+							];
+							info "Document uploaded: " + response1;
+						}						catch (docErr)
+						{
+							info "Document upload error: " + docErr;
+						}
+					}
+				}
+				// Upload Attachment
+				if(jrnl.Attachment != null && jrnl.Attachment != "")
+				{
+					try 
+					{
+						url_endpoint = "https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/All_Journals/" + jrnl.ID + "/Attachment/download";
+						var1 = invokeurl
+						[
+							url :url_endpoint
+							type :GET
+							connection:"z_creator"
+						];
+						var1.setParamName("attachment");
+						response2 = invokeurl
+						[
+							url :"https://www.zohoapis.sa/books/v3/journals/" + xpRecordID + "/attachment?organization_id=" + org
+							type :POST
+							files:var1
+							connection:"zohobooks3"
+						];
+						info "Attachment uploaded: " + response2;
+					}					catch (attachErr)
+					{
+						info "Attachment upload error: " + attachErr;
+					}
+				}
+			}
+			else
+			{
+				info "Skipping attachments (journal was updated, not created)";
+			}
+		}
+		else
+		{
+			info "No journal ID - operation failed";
+		}
+	}	catch (e)
+	{
+		info "System Error: " + e;
+		jrnl.Status="Journal Post Failed";
+		user_mas = User_Master[Position == "Accounting & Finance Manager"];
+		pushMessage = "Request " + jrnl.Reference + ": Journal posting failed. This record has not been posted to Zoho Books. Please review and retry.\n\nError: " + e;
+		sub = "Journal Posting Failed – Action Required: " + jrnl.Reference;
+		response = zoho.pushNotification({user_mas.Organization_Email},sub,pushMessage,"All_Journals",jrnl.ID);
+		sendmail
+		[
+			from :"erp@marasah.com"
+			to :user_mas.Organization_Email
+			subject :sub
+			message :pushMessage
+		]
+	}
+}

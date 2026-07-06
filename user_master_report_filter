@@ -1,0 +1,18 @@
+list check_login_user()
+{
+	
+	if(Zoho.loginuserid!=zoho.adminuserid)
+	{
+		fet= User_Master[User_Email==Zoho.loginuserid];
+		return fet.ID.getall();
+	}
+	else
+	{
+		fet= User_Master[ID!=0];
+		return fet.ID.getall();
+	}
+}
+
+in report we should use .
+
+ID - equals - check_login_user()

@@ -1,0 +1,2 @@
+line_total = ifnull(input.Total_Payable_Amount,0) - ifnull(row.Payment,0);
+input.Total_Payable_Amount = ifnull(line_total,0);

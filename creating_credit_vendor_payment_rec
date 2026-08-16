@@ -1,0 +1,154 @@
+today_date = zoho.currentdate;
+	params = {"filter_by":"Status.Overdue"};
+	current_date_formate = zoho.currentdate.toString("yyyy-MM-dd");
+	creditVendorIds = List();
+	for each v in Add_Vendor[Payment_Terms != "Due on Recipt"]
+	{
+		if(v.Zoho_Books_Id != null){ creditVendorIds.add(v.Zoho_Books_Id); }
+	}
+	
+	next_due_bill = List();
+	due_bills_for_credit_vendor = List();
+	iteration_count = {1,2,3,4,5,6,7,8,9,10};
+	page = 1;
+	for each iteration in iteration_count
+	{
+	rep = invokeurl
+	[
+		url :"https://www.zohoapis.sa/books/v3/bills?organization_id=150000132545"
+		type :GET
+		parameters:params
+		connection:"zohobooks"
+	];
+	info rep.get("message");
+	// 	info rep.get("bills").size();
+	// 	info rep.get("bills");
+	// 	info rep.get("bills");
+	vendorMap = Map();
+	for each  bill in rep.get("bills")
+	{
+		vendorID = bill.get("vendor_id");
+		if(vendorMap.contains(vendorID))
+		{
+			vendorBills = vendorMap.get(vendorID);
+			vendorBills.add(bill);
+		}
+		else
+		{
+			vendorBills = List();
+			vendorBills.add(bill);
+			vendorMap.put(vendorID,vendorBills);
+		}
+	}
+	// 	info "Vendor Map :"+ vendorMap;
+	item_coll = Collection();
+	for each  vendorID in vendorMap.keys()
+	{
+		// Get bills belonging to THIS vendor
+		vendorBills = vendorMap.get(vendorID);
+		// Get vendor record
+		ft_vendor = Add_Vendor[Zoho_Books_Id == vendorID];
+		if(ft_vendor.Company_Name.isEmpty())
+		{
+			vendor = ft_vendor.Vendor_Display_Name;
+		}
+		else
+		{
+			vendor = ft_vendor.Company_Name;
+		}
+		info "================================";
+		info "Vendor ID: " + vendorID;
+		info "Vendor: " + vendor;
+		info "Number of Bills: " + vendorBills.size();
+		// Process every bill for this vendor
+		for each  bill in vendorBills
+		{
+			info "Bill: " + bill.get("bill_number");
+			rows = Vendor_Payment_Record.Bill_Items();
+			rows.Vendor_Name=ifnull(ft_vendor.ID,null);
+			rows.Bill_Date=bill.get("date");
+			rows.Due_Date=bill.get("due_date");
+			rows.Bill=bill.get("bill_number");
+			if(bill.get("bill_number") != null && !bill.get("bill_number").isEmpty())
+			{
+				get_bill = Purchase_of_Asset[Bill_No == bill.get("bill_number").toString()];
+				if(get_bill != null)
+				{
+					if(get_bill.ID != null)
+					{
+						bill_view_url = "#Report:All_Bills1?bill_ID=" + get_bill.ID;
+						rows.View_Bills="<a href=\"" + bill_view_url + "\" target=\"_blank\">" + bill.get("bill_number") + "</a>";
+					}
+				}
+			}
+			if(Purchase_Order[Purchase_order == bill.get("reference_number").toString()].ID != null)
+			{
+				po = Purchase_Order[Purchase_order == bill.get("reference_number").toString()];
+				rows.Purchase_Order2=ifnull(po.ID,null);
+				po_view_url = "#Page:View_PO_Bills?po_ID=" + po.ID;
+				rows.View_PO="<a href=\"" + po_view_url + "\" target=\"_blank\">" + po.Purchase_order + "</a>";
+			}
+			rows.PO=bill.get("reference_number");
+			rows.Location=ifnull(Branch[Branch_Name == bill.get("location_name")].ID,null);
+			rows.Bill_Amount=ifnull(bill.get("total"),0.00);
+			rows.Amount_Due=ifnull(bill.get("balance_due"),0.00);
+			rows.Books_Bill_ID=bill.get("bill_id");
+			// IMPORTANT: insert every bill row
+			item_coll.insert(rows);
+		}
+	}
+	ft_all_Vp = Vendor_Payment_Record[ID != 0];
+	list_count = List();
+	for each  item in ft_all_Vp
+	{
+		for each  payrec in item.Bill_Items
+		{
+			if(payrec.Payment_Made_on == today_date && ifnull(payrec.Payment,0) == 0)
+			{
+				existingrow = Vendor_Payment_Record.Bill_Items();
+				existingrow.Bill=payrec.Bill;
+				existingrow.Vendor_Name=payrec.Vendor_Name;
+				existingrow.Bill_Date=payrec.Bill_Date;
+				existingrow.Due_Date=payrec.Due_Date;
+				existingrow.View_Bills=payrec.View_Bills;
+				existingrow.Purchase_Order2=payrec.Purchase_Order2;
+				existingrow.View_PO=payrec.View_PO;
+				existingrow.PO=payrec.PO;
+				existingrow.Location=payrec.Location;
+				existingrow.Bill_Amount=payrec.Bill_Amount;
+				existingrow.Amount_Due=payrec.Amount_Due;
+				existingrow.Books_Bill_ID=payrec.Books_Bill_ID;
+				existingrow.Payment_Made_on=payrec.Payment_Made_on;
+				list_count.add(payrec.Bill);
+				item_coll.insert(existingrow);
+			}
+		}
+	}
+	info "Existing bills count :" + list_count.size();
+	new_payment_rec = insert into Vendor_Payment_Record
+	[
+		Added_User=zoho.loginuser
+		Status="Pending"
+		Logs="Payment record created by system at : " + zoho.currenttime
+		Bill_Items=item_coll
+	];
+	ew_pay_rec = Vendor_Payment_Record[ID == new_payment_rec];
+	list_vp = Vendor_Payment_Record[ID != 0].count();
+	if(list_vp < 10)
+	{
+		new_ref = "000" + list_vp;
+	}
+	else if(list_vp < 100)
+	{
+		new_ref = "00" + list_vp;
+	}
+	else if(list_vp < 1000)
+	{
+		new_ref = "0" + list_vp;
+	}
+	else
+	{
+		new_ref = list_vp.toString();
+	}
+	ew_pay_rec.Payment="PR-" + new_ref;
+	}

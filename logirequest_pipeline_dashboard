@@ -1,0 +1,332 @@
+<%{
+	// 	LogiRequest = LogiRequest[ID != 0 && Status != "Request Canceled"] sort by Date_field Desc;Added_Time
+	LogiRequestList = LogiRequest[ID != 0 && Status != "Request Canceled"] sort by Request desc;
+	caceled_Req = LogiRequest[ID != 0 && Status == "Request Canceled"];
+	pendingReq = LogiRequest[ID != 0 && Status != "Completed" && Status != "Mobilization Completed" && Status != "Request Canceled" && Status != "Issued"];
+	CompletedReq = LogiRequest[ID != 0 && Status == "Completed" || Status == "Mobilization Completed" || Status == "Issued"];
+	%>
+<div style="font-family:Arial, sans-serif; background-color:#f5f7fa; padding:20px;">
+	<div style="display:flex;flex-direction:coloumn;justify-content:space-around;"> 
+	<h2 style="margin-bottom:15px;color:#4834d4">
+        Total No Of Request - <%=LogiRequest.count()%>
+    </h2>
+	<h2 style="color:#badc58">Completed ( <%=CompletedReq.count()%>)</h2>
+	<h2 style="color:#f0932b">Canceled ( <%=caceled_Req.count()%>)</h2>
+	<h2 style="color:#ff7979">Pending Request ( <%=pendingReq.count()%> ) </h2>
+	</div>
+	 <div style="
+        width:100%;
+        margin:auto;
+        max-height:1000px;
+        overflow-y:auto;
+        background:#ffffff;
+        box-shadow:0 2px 8px rgba(0,0,0,0.08);
+    ">
+	 <table style="width:100%; border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">LogiRequest #</th>
+					 <th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">Requested Date</th>
+                    <th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">Request Type</th>
+                    <th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">Requested By</th>
+					<th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">Requested From</th>
+                    <th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;">Status</th>
+					<th style="position:sticky; top:0; background:#2f4050; color:#fff; padding:12px;text-align:left;width:20%">Holding Reason</th>
+                </tr>
+            </thead>
+
+            <tbody>
+<%
+	for each  ftLogReq in LogiRequestList
+	{
+		requesterLocation = Warehouse[ID == ftLogReq.Location_of_Requester].Warehouse_Name;
+		lgID = LogiRequest[ID == ftLogReq.toLong()];
+		if(ftLogReq.Requester_Name != null)
+		{
+			user = Employee_Master[ID == ftLogReq.Requester_Name].Employee_Name;
+		}
+		if(ftLogReq.Mobilize_from_Store == true)
+		{
+			requestMode = "Store Inventory Mobilization";
+		}
+		else if(ftLogReq.Vendor_Purchase_Required == true)
+		{
+			requestMode = "Vendor Procurement";
+		}
+		else if(ftLogReq.Credit_purchase == true)
+		{
+			requestMode = "Credit Purchase";
+		}
+		else if(ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			requestMode = "Cash / Procurement Card Purchase";
+		}
+		else if(ftLogReq.Direct_Issue_Voucher == true)
+		{
+			requestMode = "Direct Issue Voucher";
+		}
+		else if(ftLogReq.Mobilized_from_Vendor == true)
+		{
+			requestMode = "Vendor Mobilization (Direct Issue Voucher)";
+		}
+		else
+		{
+			requestMode = "---";
+		}
+		// Initialize default style
+		statusStyle = "padding:4px 10px; border-radius:12px; font-size:12px; font-weight:bold; display:inline-block;";
+		// Status logic with inline style for dashboard colors
+		if(ftLogReq.Status == "Pending")
+		{
+			status = "LGR Initiated, Awaiting Line Manager Approvall";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+			// Yellow
+		}
+		else if(ftLogReq.Status == "Project In-Charge Approved")
+		{
+			status = "Line Manager Approved, Awaiting Logistics verification";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if((ftLogReq.Status == "Logistics Representative Approved" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "Logistics Representative Approved" && ftLogReq.Credit_purchase == true))
+		{
+			status = "Logistics Verified, Awaiting BSCR to Upload quotations";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Logistics Representative Approved" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Logistics Verified, Awaiting GM to Approve the Request";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Logistics Representative Approved" && ftLogReq.Mobilize_from_Store == true)
+		{
+			status = "Awaiting GM Approval for Store to Store Mobilization";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Logistics Representative Approved" && ftLogReq.Direct_Issue_Voucher == true)
+		{
+			status = "Awaiting GM Approval for Issuing Items";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Quotation Send")
+		{
+			status = "BSCR Uploaded quotations, Awaiting Logistics to add Notes";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "PO Notes Added")
+		{
+			status = "Logistics added Notes, Awaiting GM Quotation Approval";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		//else if(ftLogReq.Status == "GM Approved")
+		// {
+		// 	status = "Awaiting PO Initiation (BSCR)";
+		// 	statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		// 	}
+		else if((ftLogReq.Status == "GM Approved" || ftLogReq.Status == "Quotation Approved" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "GM Approved" || ftLogReq.Status == "Quotation Approved" && ftLogReq.Credit_purchase == true))
+		{
+			status = "GM Quotation Approved, Awaiting BSCR to Draft PO.";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		// 		else if((ftLogReq.Status == "Quotation Approved" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "Quotation Approved" && ftLogReq.Credit_purchase == true))
+		// 		{
+		// 			status = "Awaiting PO Initiation (BSCR)";
+		// 			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		// 		}
+		else if(ftLogReq.Status == "Initiated PO")
+		{
+			status = "BSCR Drafted PO, Awaiting GM to Review & Approve PO";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if((ftLogReq.Status == "Payment Approved by CEO" && ftLogReq.Credit_purchase == true) || (ftLogReq.Status == "Payment Approved by CEO" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "Credit PO Approved" && ftLogReq.Credit_purchase == true) || (ftLogReq.Status == "Credit PO Approved" && ftLogReq.Vendor_Purchase_Required == true))
+		{
+			status = "CEO payment Approved, Awaiting BSCR to Email Vendor";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "GM Approved" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "GM Approved the request, Awaiting Finance Dept to Initiate payment";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Initiated – Additional Payment Request" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Awaiting For Awaiting GM Approval";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "GM Approved – Proceed to Procurement" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Approved by GM. Awaiting Requester to Create a Bills / Expense ";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Request Cash Withdrawal" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Requester Request Cash Withdrawal, Awaiting for GM Approval";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Payment Request Skipped by Finance" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Payment skipped by Finance. Awaiting Requester to create the bill or expense.";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "GM Approved - Cash Withdrawal" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "GM Approved Cash Withdrawal, Awaiting for Requester to Generate Bill / Expense";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Cash Withdrawal Rejected by GM" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "GM Rejected Cash Withdrawal, Awaiting for Requester to Re - Initiate Request";
+			statusStyle = statusStyle + "background:#FDE2E2;color:#B91C1C;";
+		}
+		else if(ftLogReq.Status == "Payment Approved by CEO" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Payment approved by CEO. Awaiting Requester to create the bill or expense.";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Expense / Bill Partially Created" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Bill or expense is partially created. Awaiting Requester to Complete the Request";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		// this need to work on 
+		else if(ftLogReq.Status == "Expense / Bill Created" && ftLogReq.Cash_purchase_PC_Card == true)
+		{
+			status = "Bill or expense is partially created. Awaiting CF / AFM to Approve the Transactions in (FG)";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "PO Approved By GM")
+		{
+			status = "GM Approved PO, Awaiting CFA/A&F Manager PO approval in (FG)";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if((ftLogReq.Status == "Email Sent to Vendor" || ftLogReq.Status == "Vendor Email Ignored" && ftLogReq.Credit_purchase == true) || (ftLogReq.Status == "Email Sent to Vendor" || ftLogReq.Status == "Vendor Email Ignored" && ftLogReq.Vendor_Purchase_Required == true))
+		{
+			status = "BSCR Emailed / Ignored PO to Vendor, Awaiting SK/LG/BSCR/FD to Upload Bill & Delivery Note.";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if((ftLogReq.Status == "Delivery Note & Bill Added" && ftLogReq.Credit_purchase == true) || (ftLogReq.Status == "Delivery Note & Bill Added" && ftLogReq.Vendor_Purchase_Required == true))
+		{
+			status = "SK/LG/BSCR/FD Uploaded Bill & Delivery Note, Awaiting Finance Dept to Convert PO to BILL in (FG)";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "PO Approved" && ftLogReq.Vendor_Purchase_Required == true)
+		{
+			status = "GM/CEO PO Approved in BOOKS, Awaiting Finance Dept to Initiate payment";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Payment Requested")
+		{
+			status = "Finance Dept Initiated payment, Awaiting CEO Approval";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		// 		else if((ftLogReq.Status == "Payment Approved by CEO" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "Payment Approved by CEO" && ftLogReq.Credit_purchase == true))
+		// 		{
+		// 			status = "Awaiting Finance Bill Approval";
+		// 			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		// 		}
+		else if((ftLogReq.Status == "Mobilization Request" && ftLogReq.Vendor_Purchase_Required == true) || (ftLogReq.Status == "Mobilization Request" && ftLogReq.Credit_purchase == true) || ftLogReq.Status == "Mobilization Request")
+		{
+			status = "CFA/A&F Manager Approved Bill in BOOKS, Awaiting Storekeeper to initiate the Mobilization to requester";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Mobilized")
+		{
+			status = "Storekeeper initiated the Mobilization, Awaiting Driver to update the Transit";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Under Transportation")
+		{
+			status = "Under Transit, Awaiting Driver to update the delivery";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Delivered")
+		{
+			status = "Items has been Delivered to requester, Awaiting Site Rep/Store keeper to Receive the delivery";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Mobilization Completed")
+		{
+			status = "Delivered. (Site Rep/Store keeper Received the delivery)";
+			statusStyle = statusStyle + "background-color:#d4edda; color:#155724;";
+			// Green
+		}
+		else if(ftLogReq.Status == "Completed")
+		{
+			status = "Request Completed";
+			statusStyle = statusStyle + "background-color:#d4edda; color:#155724;";
+			// Green
+		}
+		else if(ftLogReq.Status == "Mobilization Completed" && ftLogReq.Direct_Issue_Voucher == true)
+		{
+			status = "Items issued to site, Awaiting GM for Approval of Issuance.";
+			statusStyle = statusStyle + "background-color:#fff3cd; color:#856404;";
+		}
+		else if(ftLogReq.Status == "Issued" && ftLogReq.Direct_Issue_Voucher == true)
+		{
+			status = "Completed. Items are issued to Site";
+			statusStyle = statusStyle + "background-color:#d4edda; color:#155724;";
+		}
+		else if(ftLogReq.Status == "Issued")
+		{
+			status = "Completed. Items are issued to Site";
+			statusStyle = statusStyle + "background-color:#d4edda; color:#155724;";
+		}
+		else if(ftLogReq.Status == "Request Canceled" || ftLogReq.Status == "Rejected")
+		{
+			status = "Request Canceled";
+			statusStyle = statusStyle + "background-color:#FDE2E2; color:#B91C1C;";
+		}
+		%>
+<tr style="border-bottom:1px solid #e0e0e0;text-align:center;">
+				<td style="padding:12px;">
+                 <a href="#Report:LogiRequest_Report?ID=<%=ftLogReq.ID%>">
+        <%=ftLogReq.Request%>
+    </a>
+</td>
+				<td style="padding:12px;text-align:left;"><%=ftLogReq.Date_Of_Request%></td>
+					<td style="padding:12px;text-align:left;"><%=requestMode%></td>
+					<td style="padding:12px;text-align:left;"><%=user%></td>
+					<td style="padding:12px;text-align:left;"><%=requesterLocation%></td>
+					<td style="padding:12px;text-align:left;">
+					<span style="
+					padding:4px 10px;
+					border-radius:12px;
+					font-size:12px;
+					font-weight:bold;
+					display:inline-block;
+					<%=statusStyle%>
+					">
+					<%=status%>
+					</span>
+					<td >'
+<%
+		if(!ftLogReq.Holding_Reason.isEmpty())
+		{
+			%>
+<span style="
+					padding:4px 10px;
+					border-radius:12px;
+					font-size:12px;
+					font-weight:bold;
+					display:inline-block;
+					background:#FDE2E2;
+					color:#B91C1C;
+					">
+					<%=ftLogReq.Holding_Reason%>
+					</span>
+<%
+		}
+		%>
+</td>
+					</td>
+                    
+                </tr>
+<%
+	}
+	%>
+</tbody>
+        </table>
+    </div>
+	</div>
+<%
+
+}%>

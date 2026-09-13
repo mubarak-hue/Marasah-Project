@@ -1,0 +1,270 @@
+	ftrec = LogiRequest[ID == lgr_recID];
+	org = "150000132545";
+	totalItems = 0;
+	completedItems = 0;
+	allTransactionsDone = false;
+	loc_of_req = ftrec.Location_of_Requester;
+	journalmp = Map();
+	journalmp.put("journal_date",zoho.currentdate);
+	journalmp.put("entry_number",ftrec.Request);
+	journalmp.put("reference_number",ftrec.Request);
+	journalmp.put("journal_type","both");
+	journalmp.put("currency_id","1079000000006131");
+	journalmp.put("status","draft");
+	create_auto_issue_voucher = false;
+	j_lines = List();
+	mob_items_list = List();
+	if(ftrec.Mobilized_Items != null && ftrec.Items_Are_Mobilized == false)
+	{
+		for each  mobItem in ftrec.Mobilized_Items
+		{
+			if(mobItem.Status == "Received" && mobItem.Transaction_Created == false)
+			{
+				totalItems = totalItems + 1;
+				info "mobilizsiton_line_relation_ID :" + mobItem.Item_Related_ID;
+				if(!mobItem.Item_Related_ID.isEmpty() && mobItem.Request_Type == "Available Assets" || mobItem.Request_Type == "New Fixed Asset")
+				{
+					assetRec = Asset_Master_Entry[ID == mobItem.Item_Related_ID.toLong()];
+					//info assetRec;
+					//THIS CRITERIA FOR ASSET MOBLIZATION THER IS NO JOURNALS AND JUST UPDATE LOCATION ONLY 
+					if(assetRec.ID != null && mobItem.Source_Location != mobItem.Destination_Location1)
+					{
+						//info "Same location so direct issue voucher required";
+						info "updating location only.. Warehouse to Warehouse";
+						assetRec.Allocated_Location=ifnull(Branch[Branch_Name.contains(mobItem.Destination_Location1.Warehouse_Name)].Branch_Name,null);
+						mobItem.Transaction_Created=true;
+						allTransactionsDone = true;
+						completedItems = completedItems + 1;
+					}
+					else if(assetRec.ID != null && mobItem.from_Projects1 != null)
+					{
+						info "Project to Warehouse";
+						ft_rec_issued_project = Issue_Voucher_Items_Assets[Project == mobItem.from_Projects1 && Asset == assetRec.ID];
+						ft_rec_issued_project.De_Mob_Date = zoho.currentdate;
+						assetRec.Asset_Stage = "Avilable";
+						assetRec.Project = null;
+					}
+				}
+				else if(!mobItem.Item_Related_ID.isEmpty() && mobItem.Request_Type == "Inventory Item")
+				{
+					invRec = Inventory_Master[ID == mobItem.Item_Related_ID.toLong()];
+					//info "Inventory Items :" + invRec;
+					inventoryItem = Inventory_Master[Name == mobItem.Item.toString()].ID;
+					Items = Inventory_Master[Name == mobItem.Item.toString()];
+					if(invRec.ID != null && mobItem.Source_Location != mobItem.Destination_Location1 || loc_of_req != mobItem.Destination_Location1)
+					{
+						//updated script  ,, Move stocks
+						tranQty = ifnull(mobItem.Transferred_Stock.toDecimal(),0);
+						info "transferring qty : " + tranQty;
+						fifoRows = FIFO_Stock_Ledger[Item == inventoryItem && Warehouse == mobItem.Source_Location && Stock_In > 0] sort by Batch asc;
+						totalAvailable = 0;
+						totalPrice = 0;
+						remainingQty = tranQty;
+						createdTrans = 0;
+						isFirstRow = true;
+						lastBatchRec = FIFO_Stock_Ledger[Item == inventoryItem && Warehouse == mobItem.Destination_Location1] sort by ID desc;
+						lastBatch = 0;
+						if(lastBatchRec.count() > 0)
+						{
+							lastBatchStr = lastBatchRec.Batch;
+							lastBatch = lastBatchStr.replaceAll("[^0-9]","").toNumber();
+						}
+						for each  x in fifoRows
+						{
+							totalAvailable = totalAvailable + ifnull(x.Remaining_Stock,0).toDecimal();
+						}
+						info "Item : " + Inventory_Master[ID == inventoryItem].Name + " Total Available : " + totalAvailable;
+						if(tranQty > totalAvailable)
+						{
+							info "Requested quantity exceeds available stock.";
+						}
+						else
+						{
+							for each  x in fifoRows
+							{
+								if(remainingQty <= 0)
+								{
+									break;
+								}
+								availableQty = ifnull(x.Remaining_Stock,0).toDecimal();
+								if(remainingQty <= availableQty)
+								{
+									qtyTaken = remainingQty;
+									remainingQty = 0;
+								}
+								else
+								{
+									qtyTaken = availableQty;
+									remainingQty = remainingQty - availableQty;
+								}
+								if(qtyTaken <= 0)
+								{
+									continue;
+								}
+								batchTotalPrice = qtyTaken * x.Unit_Price.toDecimal();
+								totalPrice = totalPrice + batchTotalPrice;
+								// UPDATE STOCK (FIFO)
+								x.Remaining_Stock=ifnull(x.Remaining_Stock,0) - qtyTaken;
+								if(x.Remaining_Stock < 0)
+								{
+									x.Remaining_Stock=0;
+								}
+								x.Available_for_Mobilization=toString(x.Remaining_Stock);
+								x.Stock_Out=ifnull(x.Stock_Out,0) + qtyTaken;
+								lastBatch = lastBatch + 1;
+								nextBatch = "B" + lastBatch;
+								// CREATING MOBILIZED FIFO LEADGER
+								recFIFO = insert into FIFO_Stock_Ledger
+								[
+									Item=inventoryItem
+									Batch=nextBatch
+									PO_date=x.PO_date
+									Source_Warehouse=mobItem.Source_Location
+									Warehouse=mobItem.Destination_Location1
+									Stock_In=qtyTaken
+									Stock_Out=0
+									Remaining_Stock=qtyTaken
+									Unit_Price=x.Unit_Price
+									Total_Price=batchTotalPrice
+									LogiRequest=ftrec.ID
+									Added_User=zoho.loginuser
+								];
+								info "Mobilized fifo :" + recFIFO;
+								// CREATE TRANSACTION
+								// ===============================
+								recTrans = insert into Transactions
+								[
+									Added_User=zoho.loginuser
+									Inventory_Item=inventoryItem
+									Inventory_Master_ID=inventoryItem
+									Source_Location=mobItem.Source_Location
+									Destination_Location=mobItem.Destination_Location1
+									Transaction_Date=zoho.currentdate
+									Transferred_Stock=qtyTaken
+									Transferred_Quantity=qtyTaken
+									Unit_Price=x.Unit_Price
+									Total_Price=batchTotalPrice
+									Batch_Count=nextBatch
+									PO_Date=x.PO_date
+									Received_Qty=qtyTaken
+									Remarks=mobItem.Receiver_Remarks
+									Transaction_Type="De-Mobilization"
+									LogiRequest=ftrec.ID
+								];
+								info "Mobilized Transaction :" + recTrans;
+								info "*********************";
+								info "Batch " + x.Batch + " used qty: " + qtyTaken;
+								info "Total Price = " + totalPrice;
+								info "*********************";
+								itemPrice = totalPrice;
+								if(itemPrice.toDecimal() > 0 && mobItem.Quantity.toDecimal() > 0 && mobItem.Journals_ID == null || mobItem.Journals_ID == "")
+								{
+									sWh = Warehouse[ID == mobItem.Source_Location].Warehouse_Account_Code;
+									debitAcc = Chart_of_Accounts[Account_Code == sWh.toString()].Zoho_Books_ID;
+									dWh = Warehouse[ID == mobItem.Destination_Location1].Warehouse_Account_Code;
+									creditAcc = Chart_of_Accounts[Account_Code == dWh.toString()].Zoho_Books_ID;
+									reportedTagsList = List();
+									if(mobItem.Projects != null)
+									{
+										projectID = Projects[ID == mobItem.Projects].Zoho_Books_ID;
+										getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+										project = getProjects.get("project");
+										// 						j_map.put("project_id",projectID);
+										contractNo = "";
+										for each  ln in project.get("custom_fields")
+										{
+											if(ln.get("field_id") == "1079000002720673")
+											{
+												contractNo = ln.get("value");
+											}
+										}
+										if(contractNo != "")
+										{
+											getFGContract = zoho.creator.getRecords("m.alsuhaimi_marasah","finance-operations","All_Project_Contracts","",1,200,"z_creator");
+											//info "Contract No Details :"+ getFGContract ;
+											conDate = getFGContract.get("data");
+											tagopID = "";
+											zbid = "";
+											for each  contX in conDate
+											{
+												if(contX.get("Contract_No") == contractNo.toString())
+												{
+													tagopID = contX.get("Tag_Opt_ID");
+													zbid = contX.get("Zoho_Books_ID");
+													break;
+												}
+											}
+											reportedTagMap = Map();
+											reportedTagMap.put("tag_option_id",tagopID);
+											reportedTagMap.put("tag_id",zbid);
+											reportedTagsList.add(reportedTagMap);
+										}
+									}
+									//info "Branch "+mobItem.Branch;
+									if(Branch[ID == mobItem.Branch].Branch_Name == "Haniya Yard")
+									{
+										info "headoffice branch ";
+										reportedTagsList.add({"tag_option_id":"1079000000043113","tag_id":"1079000000000510"});
+									}
+									else if(Branch[ID == mobItem.Branch].Branch_Name == "Head Office")
+									{
+										info "haniya yard";
+										reportedTagsList.add({"tag_option_id":"1079000000043111","tag_id":"1079000000000510"});
+									}
+									else if(Branch[ID == mobItem.Branch].Branch_Name == "Abu Maan Yard")
+									{
+										info "Abu Maan Yard";
+										reportedTagsList.add({"tag_option_id":"1079000003175766","tag_id":"1079000000000510"});
+									}
+									// Department 
+									if(Department_Master[ID == mobItem.Department].Department_Name == "Industrial Services Division")
+									{
+										info "industrial service departmet ";
+										reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000049065"});
+									}
+									else if(Department_Master[ID == mobItem.Department].Department_Name == "Ductwork Department")
+									{
+										info "ductwork department";
+										reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000049067"});
+									}
+									else if(Department_Master[ID == mobItem.Department].Department_Name == "Administration")
+									{
+										info "Adminstrative Department";
+										reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000073145"});
+									}
+									debit = {"account_id":creditAcc,"amount":ifnull(itemPrice,0),"debit_or_credit":"debit","description":Items.Sku + " - " + mobItem.Item.toString(),"tags":reportedTagsList,"project_id":projectID};
+									credit = {"account_id":debitAcc,"amount":ifnull(itemPrice,0),"debit_or_credit":"credit","description":Items.Sku + " - " + mobItem.Item.toString(),"tags":reportedTagsList,"project_id":projectID};
+									j_lines.add(debit);
+									j_lines.add(credit);
+									mob_items_list.add(mobItem.ID);
+								}
+								mobItem.Transaction_Created=true;
+								completedItems = completedItems + 1;
+								ftTrans = Transactions[ID == recTrans];
+								if(ftTrans.Received_Qty.toDecimal() != 0)
+								{
+									allTransactionsDone = true;
+									thisapp.Inventory_testing(ftTrans.ID);
+								}
+								if(remainingQty <= 0)
+								{
+									break;
+								}
+							}
+						}
+					}
+					else if( == mobItem.from_Projects1 )
+					{
+						
+					}
+// 					else if(loc_of_req == mobItem.Destination_Location1 || mobItem.Source_Location == mobItem.Destination_Location1 && invRec.ID != null)
+// 					{
+// 						mobItem.Transaction_Created=true;
+// 						completedItems = completedItems + 1;
+// 						create_auto_issue_voucher = true;
+// 					}
+					
+				}
+			}
+		}
+	}

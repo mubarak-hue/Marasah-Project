@@ -1,0 +1,127 @@
+
+ft_books_dep = zoho.books.getRecords("reportingtags", "150000132545","zoho_books");
+// 	info ft_books_dep;
+	
+	if(ft_books_dep.get("code") == 0)
+	{
+		get_tags = ft_books_dep.get("tags");
+		dep_tag_id = null;
+		if(get_tags.size()>0)
+		{
+			for each rec in get_tags
+			{
+// 				if(rec.get("tag_id") == "1079000000000510")
+// 				{
+// // 					"tag_name": "Branch/Mobile Storage Unit",
+// 				}
+				if(rec.get("tag_id") == "1079000000000512")
+				{
+					dep_tag_id = rec.get("tag_id");
+					break;
+				}
+// 				if(rec.get("tag_id") == "1079000000000514")
+// 				{
+// 					"tag_name": "Hadaf هدف",
+// 				}
+// 				if(rec.get("tag_id") == "1079000000000516")
+// 				{
+// 					"tag_name": "Origin of Product",
+// 				}
+// 				if(rec.get("tag_id") == "1079000000000518")
+// 				{
+// 					 "tag_name": "Projects",
+// 				}
+// 				if(rec.get("tag_id") == "1079000000000520")
+// 				{
+// 					 "tag_name": "Contract Number",
+// 				}
+			}
+		}
+// 		insert / update department ID
+		
+	}
+
+
+orgID = organization.get("organization_id");
+projectID = project.get("project_id");
+x = zoho.books.getRecordsByID("projects",orgID,projectID,"z_books");
+// info x;
+resp = x.get("project");
+// projectCF_No = "";
+// for each  cf in resp.get("custom_fields")
+// {
+// 	if(cf.get("field_id") == "1079000000049047")
+// 	{
+// 		projectCF_No = cf.get("value");
+// 	}
+// }
+// recMap = Map();
+// recMap.put("project_code",projectCF_No);
+// if(!projectCF_No.isEmpty())
+// {
+// 	updateRec = zoho.books.updateRecord("Projects",orgID,projectID,recMap,"books");
+// 	info updateRec.get("message");
+// 	if(updateRec.get("code") == 0)
+// 	{
+// // info resp;
+rec = invokeurl
+[
+	url :"https://www.zohoapis.sa/books/v3/projects?organization_id=" + orgID
+	type :GET
+	connection:"z_books"
+];
+// // info resp;
+// // count = 0;
+// // optionList = List();
+tagId = "1079000000000518";
+existingTagResponse = invokeurl
+[
+	url :"https://books.zoho.sa/api/v3/settings/tags/" + tagId + "?organization_id=" + orgID
+	type :GET
+	connection:"books"
+];
+tags = existingTagResponse.get("reporting_tag");
+existingTagOptions = tags.get("tag_options");
+// for each  resp in rec.get("projects")
+// {
+// 	info resp;
+projectName = resp.get("project_name");
+projectCode = resp.get("project_code");
+optionMap = Map();
+optionMap.put("tag_option_name",ifnull(projectCode,""));
+existingTagOptions.add(optionMap);
+// // }
+updateTagResponse = invokeurl
+[
+	url :"https://books.zoho.sa/api/v3/settings/tags/" + tagId + "?organization_id=" + orgID
+	type :PUT
+	parameters:{"JSONString":{"tag_name":"Projects","is_active":true,"tag_options":existingTagOptions}}
+	connection:"books"
+];
+info updateTagResponse.get("message");
+if(updateTagResponse.get("code") == 0)
+{
+	getAllTags = updateTagResponse.get("reporting_tag");
+	tagOptionsID = "";
+	for each  tagsRec in getAllTags.get("tag_options")
+	{
+		if(tagsRec.get("tag_option_name").contains(projectName + " - " + projectCode))
+		{
+			tagOptionsID = tagsRec.get("tag_option_id");
+			break;
+		}
+	}
+	info "Tag Option ID:" + tagOptionsID;
+	pMap = Map();
+	cfList = List();
+	cfMap = Map();
+	cfMap.put("customfield_id","1079000002963577");
+	cfMap.put("label","Tag Option ID");
+	cfMap.put("value",tagOptionsID);
+	cfList.add(cfMap);
+	pMap.put("custom_fields",cfList);
+	upProjecte = zoho.books.updateRecord("projects",orgID,projectID,pMap,"z_books");
+	info upProjecte.get("message");
+}
+// 	}
+// }

@@ -1,0 +1,140 @@
+	issueRecs = LogiRequest[Issue_Voucher1.Asset == ftAsset.ID];
+		sortedIssues = list();
+		for each  issueRec in issueRecs
+		{
+			for each  issueLine in Issue_Voucher_Items_Assets[ID == issueRec.Issue_Voucher1 && Issue_Date >= monthStart && Issue_Date <= monthEnd] sort by Issue_Date asc
+			{
+				ftIssuVhSbFrm = Issue_Voucher_Items_Assets[ID == issueLine.ID];
+				if(ftIssuVhSbFrm.Asset != null && ftIssuVhSbFrm.Asset == ftAsset.ID)
+				{
+					issueMap = Map();
+					issueMap.put("issue_date",ftIssuVhSbFrm.Issue_Date.toDate());
+					issueMap.put("project",ftIssuVhSbFrm.Project);
+					issueMap.put("branch",ftIssuVhSbFrm.Branch);
+					issueMap.put("department",ftIssuVhSbFrm.Department);
+					issueMap.put("location",ftIssuVhSbFrm.Warehouse);
+					issueMap.put("de_mob_date",ftIssuVhSbFrm.De_Mob_Date);
+					sortedIssues.add(issueMap);
+				}
+			}
+		}
+		// ---------------- CALCULATE DEPRECIATION SPLIT ----------------
+		prevDay = 0;
+		daysInMonth = monthEnd.getDay();
+		n = sortedIssues.size();
+		counter = 0;
+		assetDebitTotal = 0.00;
+		for each  issueMap in sortedIssues
+		{
+			issueDate = issueMap.get("issue_date");
+			issueDay = issueDate.getDay();
+			// Location debit (before this issue)
+			if(prevDay + 1 < issueDay)
+			{
+				daysLocation = issueDay - (prevDay + 1);
+				locAmt = (amt / daysInMonth * daysLocation).round(2);
+				debitLoc = {"account_id":Chart_of_Accounts[ID == assetType.Depreciation_Charge_Account].Zoho_Books_ID,"amount":locAmt,"debit_or_credit":"debit","tags":baseTags,"project_id":projectID,"description":"Asset ID: " + depAsset.Asset_Unique_ID + " - " + depAsset.Asset_Name};
+				allLineItems.add(debitLoc);
+				assetDebitTotal = assetDebitTotal + locAmt;
+			}
+			// Project debit — end day = next issue or de-mob, whichever is earlier
+			nextDay = daysInMonth;
+			tempCounter = 0;
+			for each  nextIssue in sortedIssues
+			{
+				if(tempCounter > counter)
+				{
+					nextDay = nextIssue.get("issue_date").getDay() - 1;
+					break;
+				}
+				tempCounter = tempCounter + 1;
+			}
+			demob = issueMap.get("de_mob_date");
+			if(demob != null && demob.toDate() >= monthStart && demob.toDate() <= monthEnd)
+			{
+				demobDay = demob.toDate().getDay() - 1;
+				if(demobDay < nextDay)
+				{
+					nextDay = demobDay;
+				}
+			}
+			daysProject = nextDay - issueDay + 1;
+			if(daysProject > 0)
+			{
+				tagList = list();
+				projAmt = (amt / daysInMonth * daysProject).round(2);
+				// Build project tags
+				if(issueMap.get("project") != null)
+				{
+					IssueprojectID = Projects[ID == issueMap.get("project")];
+					getProjects = zoho.books.getRecordsByID("projects",orgID,IssueprojectID.Zoho_Books_ID,"zohobooks3");
+					project = getProjects.get("project");
+					contractNo = "";
+					for each  ln in project.get("custom_fields")
+					{
+						if(ln.get("field_id") == "1079000002720673")
+						{
+							contractNo = ln.get("value");
+						}
+					}
+					if(contractNo != "")
+					{
+						getContract = Project_Contract_Nos[Contract_No == contractNo.toString()];
+						contractTag = Map();
+						contractTag.put("tag_option_id",getContract.Tag_Opt_ID);
+						contractTag.put("tag_id",getContract.Zoho_Books_ID);
+						tagList.add(contractTag);
+					}
+					if(issueMap.get("branch") != null)
+					{
+						getBranch = Branch[ID == issueMap.get("branch")];
+						branchMap = Map();
+						branchMap.put("tag_id",getBranch.Tag_ID);
+						branchMap.put("tag_option_id",getBranch.Option_ID);
+						tagList.add(branchMap);
+					}
+				}
+				debitProj = {"account_id":Chart_of_Accounts[ID == assetType.Depreciation_Charge_Account].Zoho_Books_ID,"amount":projAmt,"debit_or_credit":"debit","tags":tagList,"project_id":IssueprojectID.Zoho_Books_ID,"description":"Asset ID: " + depAsset.Asset_Unique_ID + " - " + depAsset.Asset_Name + " (From " + issueDay + " to " + nextDay + " the asset has been issued to project)"};
+				allLineItems.add(debitProj);
+				assetDebitTotal = assetDebitTotal + projAmt;
+			}
+			// Location tail — asset returned to warehouse after de-mob
+			if(demob != null && demob.toDate() >= monthStart && demob.toDate() <= monthEnd)
+			{
+				tailStart = nextDay + 1;
+				tailEnd = daysInMonth;
+				tempCounter = 0;
+				for each  nextIssue in sortedIssues
+				{
+					if(tempCounter > counter)
+					{
+						tailEnd = nextIssue.get("issue_date").getDay() - 1;
+						break;
+					}
+					tempCounter = tempCounter + 1;
+				}
+				if(tailEnd >= tailStart)
+				{
+					tailDays = tailEnd - tailStart + 1;
+					tailAmt = (amt / daysInMonth * tailDays).round(2);
+					allLineItems.add({"account_id":Chart_of_Accounts[ID == assetType.Depreciation_Charge_Account].Zoho_Books_ID,"amount":tailAmt,"debit_or_credit":"debit","tags":baseTags,"project_id":projectID,"description":"Asset ID: " + depAsset.Asset_Unique_ID + " - " + depAsset.Asset_Name + " (Returned to location days " + tailStart + "-" + tailEnd + ")"});
+					assetDebitTotal = assetDebitTotal + tailAmt;
+				}
+				prevDay = tailEnd;
+			}
+			else
+			{
+				prevDay = nextDay;
+			}
+			counter = counter + 1;
+		}
+		// Full month location debit if no issues
+		if(n == 0)
+		{
+			debitLoc = {"account_id":Chart_of_Accounts[ID == assetType.Depreciation_Charge_Account].Zoho_Books_ID,"amount":amt,"debit_or_credit":"debit","tags":baseTags,"project_id":projectID,"description":"Asset ID: " + depAsset.Asset_Unique_ID + " - " + depAsset.Asset_Name};
+			allLineItems.add(debitLoc);
+			assetDebitTotal = assetDebitTotal + amt;
+		}
+		// Credit entry — balanced to the sum of debits actually posted
+		credit = {"account_id":Chart_of_Accounts[ID == assetType.Depreciation_Account].Zoho_Books_ID,"amount":assetDebitTotal.round(2),"debit_or_credit":"credit","tags":baseTags,"project_id":projectID,"description":"Asset ID: " + depAsset.Asset_Unique_ID + " - " + depAsset.Asset_Name};
+		allLineItems.add(credit);

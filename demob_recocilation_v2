@@ -1,0 +1,734 @@
+void lgr_demob_reconcilation_ast_inventory(int recID)
+{
+	lgr_rec = LogiRequest[ID == recID];
+	org = "150000132545";
+	conn = "zohobooks3";
+	today = zoho.currentdate;
+	expAcc = "1079000000014547";
+	finalStatus = "De-Mobilized";
+	holdStatus = "Delivered";
+	retun_to_wh = List();
+	return_to_wh_item = List();
+	linelist = List();
+	issued_items = List();
+	xfer_lines = List();
+	xfer_items = List();
+	reportedTagsList = List();
+	errors = List();
+	projectID = null;
+	completedItems = 0;
+	totalItems = 0;
+	hasInventory = false;
+	for each  pre in lgr_rec.Mobilized_Items
+	{
+		if(pre.Request_Type == "Inventory Item")
+		{
+			hasInventory = true;
+		}
+	}
+	// ---------- Books project + contract tag (only when inventory lines exist)
+	if(lgr_rec.Project_Name != null && hasInventory)
+	{
+		projectID = Projects[ID == lgr_rec.Project_Name].Zoho_Books_ID;
+		if(projectID != null && projectID.toString() != "")
+		{
+			getProjects = zoho.books.getRecordsByID("projects",org,projectID.toString(),"zohobooks3");
+			project = getProjects.get("project");
+			contractNo = "";
+			for each  ln in project.get("custom_fields")
+			{
+				if(ln.get("field_id") == "1079000002720673")
+				{
+					contractNo = ln.get("value");
+					break;
+				}
+			}
+			if(contractNo != "")
+			{
+				getFGContract = zoho.creator.getRecords("m.alsuhaimi_marasah","finance-operations","All_Project_Contracts","",1,200,"z_creator");
+				for each  contX in getFGContract.get("data")
+				{
+					if(contX.get("Contract_No") == contractNo.toString())
+					{
+						reportedTagsList.add({"tag_option_id":ifnull(contX.get("Tag_Opt_ID"),""),"tag_id":ifnull(contX.get("Zoho_Books_ID"),"")});
+						break;
+					}
+				}
+			}
+		}
+	}
+	// ============================ MAIN LOOP ==
+	for each  mobItem in lgr_rec.Mobilized_Items
+	{
+		totalItems = totalItems + 1;
+		relId = ifnull(mobItem.Item_Related_ID,"").toString();
+		hasFrom = mobItem.from_Projects1 != null;
+		hasTo = mobItem.to_Projects2 != null;
+		hasSrc = mobItem.Source_Location != null;
+		hasDst = mobItem.Destination_Location1 != null;
+		isAssetLine = mobItem.Request_Type == "Available Assets" || mobItem.Request_Type == "New Fixed Asset";
+		if(relId == "")
+		{
+			errors.add("Line " + mobItem.ID + ": Item_Related_ID is empty");
+			continue;
+		}
+		// ======================= ASSETS =======================
+		if(isAssetLine)
+		{
+			if(mobItem.Transaction_Created == true)
+			{
+				completedItems = completedItems + 1;
+				continue;
+			}
+			assetRec = Asset_Master_Entry[ID == relId.toLong()];
+			if(assetRec.ID == null)
+			{
+				errors.add("Line " + mobItem.ID + ": asset not found");
+				continue;
+			}
+			stageIn = ifnull(mobItem.Asset_Stage,"Available");
+			dstLoc = "";
+			if(hasDst)
+			{
+				dstWh = Warehouse[ID == mobItem.Destination_Location1];
+				dstLoc = ifnull(dstWh.Branch_Lookup.Branch_Name,dstWh.Warehouse_Name);
+				// Allocated_Location dropdown = branch names
+			}
+			if(hasFrom && hasTo && mobItem.from_Projects1 != mobItem.to_Projects2)
+			{
+				info "Asset: Project to Project";
+				oldIv = Issue_Voucher_Items_Assets[Asset == assetRec.ID && Project == mobItem.from_Projects1 && De_Mob_Date == null];
+				if(mobItem.Issue_voucher_fetch_from != null)
+				{
+					oldIv = Issue_Voucher_Items_Assets[ID == mobItem.Issue_voucher_fetch_from];
+				}
+				if(oldIv.count() > 0)
+				{
+					oldIv.De_Mob_Date=today;
+				}
+				newIv = insert into Issue_Voucher_Items_Assets
+				[
+					Added_User=zoho.loginuser
+					Asset=assetRec.ID
+					LogiRequest=lgr_rec.ID
+					Issue_Date=today
+					Project=mobItem.to_Projects2
+					Department=ifnull(mobItem.Department,null)
+					Branch=ifnull(mobItem.Branch,null)
+					Available_Quantity=1
+					Issued_Quantity=1
+					Unit="Pcs"
+					Remarks="Asset demobilized from the [" + mobItem.from_Projects1.Project_Code + " - " + mobItem.from_Projects1.Project_Name + "] and transferred to the destination [" + mobItem.to_Projects2.Project_Code + " - " + mobItem.to_Projects2.Project_Name + "] for reassignment."
+					Unit_Price=0
+					Total_Issue_price=0
+					Remarks="Project-to-project re-assignment via " + lgr_rec.Request
+				];
+				mobItem.Issue_voucher_fetch_from=newIv;
+				assetRec.Project=mobItem.to_Projects2;
+				assetRec.Asset_Stage="Assigned to Project";
+			}
+			else if(hasFrom && !hasTo && hasDst)
+			{
+				info "Asset: Project to Warehouse";
+				oldIv = Issue_Voucher_Items_Assets[Asset == assetRec.ID && Project == mobItem.from_Projects1 && De_Mob_Date == null];
+				if(mobItem.Issue_voucher_fetch_from != null)
+				{
+					oldIv = Issue_Voucher_Items_Assets[ID == mobItem.Issue_voucher_fetch_from];
+				}
+				if(oldIv.count() > 0)
+				{
+					oldIv.De_Mob_Date=today;
+				}
+				else
+				{
+					info "No open issue voucher line found for asset " + assetRec.ID;
+				}
+				assetRec.Asset_Stage=stageIn;
+				assetRec.Project=null;
+				assetRec.Allocated_Location=dstLoc;
+			}
+			else if(!hasFrom && !hasTo && hasSrc && hasDst && mobItem.Source_Location != mobItem.Destination_Location1)
+			{
+				info "Asset: Warehouse to Warehouse - Allocated_Location only";
+				assetRec.Allocated_Location=dstLoc;
+			}
+			else
+			{
+				errors.add("Line " + mobItem.ID + ": asset line cannot be classified (check from/to project and source/destination)");
+				continue;
+			}
+			mobItem.Transaction_Created=true;
+			completedItems = completedItems + 1;
+		}
+		// ======================= INVENTORY =======================
+		else if(mobItem.Request_Type == "Inventory Item")
+		{
+			// ---- project to project : no workflow ----
+			if(hasFrom && hasTo)
+			{
+				info "Inventory: Project to Project - skipped";
+				p2pName = Inventory_Master[ID == relId.toLong()].Name;
+				errors.add("Inventory project-to-project transfer is not supported (" + ifnull(p2pName,relId) + "). Process it manually or remove the line, then submit again.");
+				continue;
+			}
+			invRec = Inventory_Master[ID == relId.toLong()];
+			if(invRec.ID == null)
+			{
+				errors.add("Line " + invRec.Name + " -- " + invRec.Sku + ": inventory item not found");
+				continue;
+			}
+			if(!hasDst)
+			{
+				errors.add("Line " + invRec.Name + " -- " + invRec.Sku + ": Destination_Location1 is empty");
+				continue;
+			}
+			scn = "";
+			if(hasFrom)
+			{
+				scn = "P2L";
+			}
+			else if(hasSrc && mobItem.Source_Location != mobItem.Destination_Location1)
+			{
+				scn = "L2L";
+			}
+			else
+			{
+				errors.add("Line " + mobItem.ID + ": inventory line cannot be classified");
+				continue;
+			}
+			dstWh = Warehouse[ID == mobItem.Destination_Location1];
+			srcWh = dstWh;
+			if(hasSrc)
+			{
+				srcWh = Warehouse[ID == mobItem.Source_Location];
+				// P2L issue adjustment + L2L source
+			}
+			unitCost = ifnull(mobItem.Item_Price,0.0);
+			jDir = null;
+			jAmt = 0.0;
+			jrnlState = ifnull(mobItem.Journals_ID,"").toString();
+			if(mobItem.Transaction_Created == true)
+			{
+				// ledger already posted earlier -> only retry the journal if it is still pending
+				if(jrnlState.startsWith("PENDING|"))
+				{
+					parts = jrnlState.toList("|");
+					jDir = parts.get(1);
+					jAmt = parts.get(2).toDecimal();
+				}
+				else
+				{
+					completedItems = completedItems + 1;
+					continue;
+				}
+			}
+			else if(scn == "P2L")
+			{
+				diff = ifnull(mobItem.Stock_Difference,0.0);
+				if(diff == 0.0)
+				{
+					mobItem.Transaction_Created=true;
+					completedItems = completedItems + 1;
+					continue;
+				}
+				if(diff > 0.0)
+				{
+					// ================= ADD STOCK (difference > 0) =================
+					qtyIn = diff;
+					totalItemPrice = qtyIn * unitCost;
+					accIn = ifnull(Chart_of_Accounts[Account_Code == dstWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+					if(totalItemPrice > 0 && accIn == "")
+					{
+						errors.add("Line " + mobItem.ID + ": inventory account missing for warehouse " + dstWh.Warehouse_Name);
+						continue;
+					}
+					// ---- warehouse stock ----
+					wls = Warehouse_Location_Stock[Ware_house_Location == dstWh.ID && Item == invRec.ID];
+					if(wls.count() > 0)
+					{
+						wls.Available_Stock=ifnull(wls.Available_Stock,0.0) + qtyIn;
+					}
+					else
+					{
+						insert into Warehouse_Location_Stock
+						[
+							Item=invRec.ID
+							Ware_house_Location=dstWh.ID
+							Available_Stock=qtyIn
+							Added_User=zoho.loginuser
+						]
+					}
+					// ---- master quantity ----
+					invRec.Quantity=(ifnull(invRec.Quantity,"0").toDecimal() + qtyIn).toString();
+					// ---- next batch number ----
+					latest_batch_no = 0;
+					for each  fifo in FIFO_Stock_Ledger[Item == invRec.ID && Warehouse == dstWh.ID]
+					{
+						bTxt = ifnull(fifo.Batch,"");
+						if(bTxt.startsWith("B") && bTxt.replaceAll("B","").isNumber())
+						{
+							bn = bTxt.replaceAll("B","").toLong();
+							if(bn > latest_batch_no)
+							{
+								latest_batch_no = bn;
+							}
+						}
+					}
+					new_batch = "B" + (latest_batch_no + 1);
+					// ---- FIFO layer ----
+					FIFO_stock_in_Leadger = insert into FIFO_Stock_Ledger
+					[
+						Item=invRec.ID
+						Warehouse=dstWh.ID
+						Source_Warehouse=ifnull(mobItem.Source_Location,null)
+						Stock_In=qtyIn
+						Batch_Stock=qtyIn
+						Remaining_Stock=qtyIn
+						Unit_Price=unitCost
+						Total_Price=totalItemPrice
+						Batch=new_batch
+						PO_date=today
+						Added_Date=today
+						Available_for_Mobilization=qtyIn.toString()
+						LogiRequest=lgr_rec.ID
+						Added_User=zoho.loginuser
+					];
+					info "FIFO ledger created :" + FIFO_stock_in_Leadger;
+					// ---- DEMOB-IN transaction ----
+					create_stock_in_trans = insert into Transactions
+					[
+						Added_User=zoho.loginuser
+						Transaction_Date=today
+						Inventory_Item=invRec.ID
+						Source_Location=ifnull(mobItem.Source_Location,null)
+						Destination_Location=dstWh.ID
+						Transferred_Stock=qtyIn
+						Transferred_Quantity=qtyIn
+						Received_Qty=qtyIn.toString()
+						Unit_Price=unitCost
+						Total_Price=totalItemPrice
+						Batch_Count=new_batch
+						PO_Date=today
+						LogiRequest=lgr_rec.ID
+						Transaction_Type="DEMOB-IN"
+						Remarks="De-Mobilization stock return" + mobItem.from_Projects1.Project_Code + " - " + mobItem.from_Projects1.Project_Name + " to " + dstWh.Warehouse_Name + " | Qty: " + qtyIn + " @ " + unitCost + " | " + lgr_rec.Request + " | " + zoho.loginuser + " | " + today
+					];
+					info "DEMOB-IN transaction created :" + create_stock_in_trans;
+					// ---- close the original issue voucher line ----
+					if(mobItem.Issue_voucher_fetch_from != null)
+					{
+						ex_isuVh_ = Issue_Voucher_Items_Assets[ID == mobItem.Issue_voucher_fetch_from];
+						ex_isuVh_.De_Mob_Date=today;
+					}
+					jDir = "IN";
+					jAmt = totalItemPrice;
+				}
+				else
+				{
+					// ================= REDUCE + ISSUE STOCK (difference < 0) =================
+					qtyOut = diff * -1;
+					accOut = ifnull(Chart_of_Accounts[Account_Code == srcWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+					// ---- FIFO plan (oldest first) ----
+					fifoRows = FIFO_Stock_Ledger[Item == invRec.ID && Warehouse == srcWh.ID && Remaining_Stock > 0] sort by Added_Time asc;
+					plan = List();
+					remainingQty = qtyOut;
+					totalItemPrice = 0.0;
+					for each  b in fifoRows
+					{
+						if(remainingQty <= 0)
+						{
+							break;
+						}
+						avail = ifnull(b.Remaining_Stock,0.0);
+						if(avail <= 0)
+						{
+							continue;
+						}
+						take = remainingQty;
+						if(avail < remainingQty)
+						{
+							take = avail;
+						}
+						price = ifnull(b.Unit_Price,0.0);
+						plan.add({"id":b.ID.toString(),"take":take,"price":price,"batch":b.Batch,"po":ifnull(b.PO_date,today)});
+						totalItemPrice = totalItemPrice + take * price;
+						remainingQty = remainingQty - take;
+					}
+					// ---- validate BEFORE changing anything ----
+					wlsOut = Warehouse_Location_Stock[Ware_house_Location == srcWh.ID && Item == invRec.ID];
+					if(remainingQty > 0 || wlsOut.count() == 0 || ifnull(wlsOut.Available_Stock,0.0) < qtyOut)
+					{
+						errors.add("Line " + mobItem.ID + ": insufficient stock at " + srcWh.Warehouse_Name + " to issue " + qtyOut);
+						continue;
+					}
+					if(totalItemPrice > 0 && accOut == null)
+					{
+						errors.add("Line " + mobItem.ID + ": inventory account missing for warehouse " + srcWh.Warehouse_Name);
+						continue;
+					}
+					// ---- MUTATE ----
+					for each  p in plan
+					{
+						bRow = FIFO_Stock_Ledger[ID == p.get("id").toLong()];
+						bRow.Remaining_Stock=ifnull(bRow.Remaining_Stock,0.0) - p.get("take");
+						bRow.Available_for_Mobilization=toString(ifnull(bRow.Remaining_Stock,0.0));
+						insert into Transactions
+						[
+							Added_User=zoho.loginuser
+							Transaction_Date=today
+							Inventory_Item=invRec.ID
+							Source_Location=srcWh.ID
+							Stock_Out=p.get("take").toString()
+							Transferred_Quantity=p.get("take")
+							Unit_Price=p.get("price")
+							Total_Price=p.get("take") * p.get("price")
+							Batch_Count=p.get("batch")
+							PO_Date=p.get("po")
+							LogiRequest=lgr_rec.ID
+							Transaction_Type="Issued"
+							Remarks="Stock issued on De-Mobilization (shortage vs. issued qty) from " + srcWh.Warehouse_Name + " | Batch " + p.get("batch") + " | Qty " + p.get("take") + " @ " + p.get("price") + " | " + lgr_rec.Request
+						]
+						insert into Issue_Voucher_Items_Assets
+						[
+							Added_User=zoho.loginuser
+							Inventory_Item=invRec.ID
+							Warehouse=srcWh.ID
+							Available_Quantity=p.get("take")
+							Issued_Quantity=p.get("take")
+							Unit_Price=p.get("price")
+							Total_Issue_price=p.get("take") * p.get("price")
+							Issue_Date=today
+							Project=mobItem.from_Projects1
+							LogiRequest=lgr_rec.ID
+						]
+					}
+					wlsOut.Available_Stock=ifnull(wlsOut.Available_Stock,0.0) - qtyOut;
+					invRec.Quantity=(ifnull(invRec.Quantity,"0").toDecimal() - qtyOut).toString();
+					jDir = "OUT";
+					jAmt = totalItemPrice;
+				}
+			}
+			else if(scn == "L2L")
+			{
+				// ---------- WAREHOUSE TRANSFER ----------
+				qty = ifnull(mobItem.Quantity,0.0);
+				accSrc = ifnull(Chart_of_Accounts[Account_Code == srcWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+				accDst = ifnull(Chart_of_Accounts[Account_Code == dstWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+				if(qty <= 0)
+				{
+					errors.add("Line " + mobItem.ID + ": Quantity must be > 0 for warehouse transfer");
+					continue;
+				}
+				fifoRows = FIFO_Stock_Ledger[Item == invRec.ID && Warehouse == srcWh.ID && Remaining_Stock > 0] sort by Added_Time asc;
+				plan = List();
+				remainingQty = qty;
+				totalItemPrice = 0.0;
+				for each  b in fifoRows
+				{
+					if(remainingQty <= 0)
+					{
+						break;
+					}
+					avail = ifnull(b.Remaining_Stock,0.0);
+					if(avail <= 0)
+					{
+						continue;
+					}
+					take = remainingQty;
+					if(avail < remainingQty)
+					{
+						take = avail;
+					}
+					price = ifnull(b.Unit_Price,0.0);
+					plan.add({"id":b.ID.toString(),"take":take,"price":price,"batch":b.Batch,"po":ifnull(b.PO_date,today)});
+					totalItemPrice = totalItemPrice + take * price;
+					remainingQty = remainingQty - take;
+				}
+				wlsSrc = Warehouse_Location_Stock[Ware_house_Location == srcWh.ID && Item == invRec.ID];
+				if(remainingQty > 0 || wlsSrc.count() == 0 || ifnull(wlsSrc.Available_Stock,0.0) < qty)
+				{
+					errors.add("Line " + mobItem.ID + ": insufficient stock at source warehouse " + srcWh.Warehouse_Name);
+					continue;
+				}
+				needJournal = totalItemPrice > 0 && accSrc != accDst;
+				if(needJournal && accSrc == null || accDst == null)
+				{
+					errors.add("Line " + mobItem.ID + ": inventory account missing for source/destination warehouse");
+					continue;
+				}
+				latest_batch_no = 0;
+				for each  fifo in FIFO_Stock_Ledger[Item == invRec.ID && Warehouse == dstWh.ID]
+				{
+					bTxt = ifnull(fifo.Batch,"");
+					if(bTxt.startsWith("B") && bTxt.replaceAll("B","").isNumber())
+					{
+						bn = bTxt.replaceAll("B","").toLong();
+						if(bn > latest_batch_no)
+						{
+							latest_batch_no = bn;
+						}
+					}
+				}
+				// ---- MUTATE ----
+				for each  p in plan
+				{
+					bRow = FIFO_Stock_Ledger[ID == p.get("id").toLong()];
+					bRow.Remaining_Stock=ifnull(bRow.Remaining_Stock,0.0) - p.get("take");
+					bRow.Available_for_Mobilization=toString(ifnull(bRow.Remaining_Stock,0.0));
+					latest_batch_no = latest_batch_no + 1;
+					newB = "B" + latest_batch_no;
+					insert into FIFO_Stock_Ledger
+					[
+						Item=invRec.ID
+						Warehouse=dstWh.ID
+						Source_Warehouse=srcWh.ID
+						Stock_In=p.get("take")
+						Batch_Stock=p.get("take")
+						Remaining_Stock=p.get("take")
+						Unit_Price=p.get("price")
+						Total_Price=p.get("take") * p.get("price")
+						Batch=newB
+						PO_date=p.get("po")
+						Added_Date=today
+						Available_for_Mobilization=p.get("take").toString()
+						LogiRequest=lgr_rec.ID
+						Added_User=zoho.loginuser
+					]
+					insert into Transactions
+					[
+						Added_User=zoho.loginuser
+						Transaction_Date=today
+						Inventory_Item=invRec.ID
+						Source_Location=srcWh.ID
+						Stock_Out=p.get("take").toString()
+						Transferred_Quantity=p.get("take")
+						Unit_Price=p.get("price")
+						Total_Price=p.get("take") * p.get("price")
+						Batch_Count=p.get("batch")
+						PO_Date=p.get("po")
+						LogiRequest=lgr_rec.ID
+						Transaction_Type="DEMOB-OUT"
+						Remarks="De-Mobilization warehouse transfer (out) - " + lgr_rec.Request
+					]
+					insert into Transactions
+					[
+						Added_User=zoho.loginuser
+						Transaction_Date=today
+						Inventory_Item=invRec.ID
+						Source_Location=srcWh.ID
+						Destination_Location=dstWh.ID
+						Transferred_Stock=p.get("take")
+						Transferred_Quantity=p.get("take")
+						Received_Qty=p.get("take").toString()
+						Unit_Price=p.get("price")
+						Total_Price=p.get("take") * p.get("price")
+						Batch_Count=newB
+						PO_Date=p.get("po")
+						LogiRequest=lgr_rec.ID
+						Transaction_Type="DEMOB-IN"
+						Remarks="De-Mobilization warehouse transfer (in) - " + lgr_rec.Request
+					]
+				}
+				wlsSrc.Available_Stock=ifnull(wlsSrc.Available_Stock,0.0) - qty;
+				wlsDst = Warehouse_Location_Stock[Ware_house_Location == dstWh.ID && Item == invRec.ID];
+				if(wlsDst.count() > 0)
+				{
+					wlsDst.Available_Stock=ifnull(wlsDst.Available_Stock,0.0) + qty;
+				}
+				else
+				{
+					insert into Warehouse_Location_Stock
+					[
+						Item=invRec.ID
+						Ware_house_Location=dstWh.ID
+						Available_Stock=qty
+						Added_User=zoho.loginuser
+					]
+				}
+				// master Quantity unchanged (total does not move)
+				if(needJournal)
+				{
+					jDir = "XFER";
+					jAmt = totalItemPrice;
+				}
+			}
+			// ---------- ledger done: flag it BEFORE the journal so a Books failure can never double-post stock ----------
+			if(mobItem.Transaction_Created != true)
+			{
+				mobItem.Transaction_Created=true;
+				if(jDir != null && jAmt > 0)
+				{
+					mobItem.Journals_ID="PENDING|" + jDir + "|" + jAmt;
+				}
+				// ---------- queue journal ----------
+				if(jDir != null && jAmt > 0)
+				{
+					lineTags = List();
+					lineTags.addAll(reportedTagsList);
+					if(mobItem.Department != null)
+					{
+						dep_mst = Department_Master[ID == mobItem.Department];
+						lineTags.add({"tag_option_id":dep_mst.Zoho_books_ID,"tag_id":dep_mst.Department_tag_ID});
+					}
+					if(mobItem.Branch != null)
+					{
+						line_branch = Branch[ID == mobItem.Branch];
+						lineTags.add({"tag_option_id":line_branch.Option_ID,"tag_id":line_branch.Tag_ID});
+					}
+					desc = invRec.Sku + " - " + invRec.Name;
+					accDstJ = ifnull(Chart_of_Accounts[Account_Code == dstWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+					accSrcJ = ifnull(Chart_of_Accounts[Account_Code == srcWh.Warehouse_Account_Code].Zoho_Books_ID,"");
+					dAcc = "";
+					cAcc = "";
+					if(jDir == "IN")
+					{
+						dAcc = accDstJ;
+						cAcc = expAcc;
+					}
+					else if(jDir == "OUT")
+					{
+						dAcc = expAcc;
+						cAcc = accSrcJ;
+					}
+					else
+					{
+						dAcc = accDstJ;
+						cAcc = accSrcJ;
+					}
+					if(dAcc.isEmpty() || cAcc.isEmpty())
+					{
+						errors.add("Line " + mobItem.ID + ": journal account missing - ledger posted, journal PENDING");
+						continue;
+					}
+					dMap = {"account_id":dAcc,"amount":jAmt,"debit_or_credit":"debit","description":desc,"tags":lineTags};
+					cMap = {"account_id":cAcc,"amount":jAmt,"debit_or_credit":"credit","description":desc,"tags":lineTags};
+					if(projectID != null && projectID.toString() != "")
+					{
+						dMap.put("project_id",projectID);
+						cMap.put("project_id",projectID);
+					}
+					if(jDir == "IN")
+					{
+						retun_to_wh.add(dMap);
+						retun_to_wh.add(cMap);
+						return_to_wh_item.add(mobItem.ID.toString());
+					}
+					else if(jDir == "OUT")
+					{
+						linelist.add(dMap);
+						linelist.add(cMap);
+						issued_items.add(mobItem.ID.toString());
+					}
+					else
+					{
+						xfer_lines.add(dMap);
+						xfer_lines.add(cMap);
+						xfer_items.add(mobItem.ID.toString());
+					}
+				}
+				else
+				{
+					info "Inventory line posted without financial impact";
+					completedItems = completedItems + 1;
+				}
+			}
+		}
+		else
+		{
+			errors.add("Line " + mobItem.ID + ": unsupported Request_Type '" + mobItem.Request_Type + "'");
+		}
+	}
+	// ============================ POST JOURNALS ===
+	jBatches = List();
+	if(retun_to_wh.size() > 0)
+	{
+		jBatches.add({"lines":retun_to_wh,"ids":return_to_wh_item,"note":"Stock return - De-Mobilization adjustment"});
+	}
+	if(linelist.size() > 0)
+	{
+		jBatches.add({"lines":linelist,"ids":issued_items,"note":"Issue Voucher journal - De-Mobilization adjustment"});
+	}
+	if(xfer_lines.size() > 0)
+	{
+		jBatches.add({"lines":xfer_lines,"ids":xfer_items,"note":"Warehouse transfer - De-Mobilization"});
+	}
+	journalFailed = false;
+	for each  jb in jBatches
+	{
+		jm = Map();
+		jm.put("journal_date",today.toString("yyyy-MM-dd"));
+		jm.put("reference_number",lgr_rec.Request.toString());
+		jm.put("journal_type","both");
+		jm.put("currency_id","1079000000006131");
+		jm.put("status","draft");
+		jm.put("notes",jb.get("note"));
+		jm.put("line_items",jb.get("lines"));
+		hdr = Map();
+		hdr.put("Content-Type","application/json");
+		response = invokeurl
+		[
+			url :"https://www.zohoapis.sa/books/v3/journals?organization_id=" + org
+			type :POST
+			parameters:jm.toString()
+			headers:hdr
+			connection:"zohobooks3"
+		];
+		if(response != null && response.get("code") == 0)
+		{
+			jid = response.get("journal").get("journal_id").toString();
+			for each  m in lgr_rec.Mobilized_Items
+			{
+				if(jb.get("ids").contains(m.ID.toString()))
+				{
+					m.Journals_ID=jid;
+					if(m.Issue_voucher_fetch_from != null)
+					{
+						ivx = Issue_Voucher_Items_Assets[ID == m.Issue_voucher_fetch_from];
+						ivx.De_Mob_Date=today;
+						ivx.Transactions_Created=true;
+					}
+					completedItems = completedItems + 1;
+				}
+			}
+		}
+		else
+		{
+			journalFailed = true;
+			info "Journal creation failed : " + response;
+		}
+	}
+	// ============================ FINALISE ==
+	hist = ifnull(lgr_rec.Logs,"");
+	if(completedItems == totalItems && totalItems > 0 && errors.size() == 0 && !journalFailed)
+	{
+		lgr_rec.Status=finalStatus;
+		lgr_rec.Items_Are_Mobilized=true;
+		lgr_rec.Logs=hist + "\n Items De-Mobilized by " + zoho.loginuser + " at " + zoho.currenttime;
+		requestNo = lgr_rec.Request;
+		portalEmail = List();
+		orgEmail = List();
+		for each  u in User_Master[Position == "Logistics Manager" || Position == "Store Keeper"]
+		{
+			portalEmail.add(u.User_Email);
+			orgEmail.add(u.Organization_Email);
+		}
+		pushMessage = "Request " + requestNo + ": Items have been successfully received in the warehouse.";
+		sub = "Items Received in Warehouse – " + requestNo;
+		zoho.pushNotification(portalEmail,sub,pushMessage,"LogiRequest_Report",lgr_rec.ID);
+		sendmail
+		[
+			from :"erp@marasah.com"
+			to :orgEmail
+			subject :sub
+			message :pushMessage
+		]
+		thisapp.MB_ZOHO_BOOKS_INTEG.add_image_to_inventory(lgr_rec.ID);
+	}
+	else
+	{
+		lgr_rec.Status=holdStatus;
+		lgr_rec.Logs=hist + "\n De-Mobilization held (" + completedItems + "/" + totalItems + " lines) " + if(errors.size() > 0,errors.toString(),"") + if(journalFailed," | Books journal failed - press Submit again to retry the journal only","") + " | " + zoho.loginuser + " | " + zoho.currenttime;
+		info "De-Mobilization Held";
+		openUrl("#Page:Alert_presets?alert_info=De-Mobilization held. Please verify the mobilization details, update them if required, and submit again.","popup window","height=auto,width=100%");
+	}
+}

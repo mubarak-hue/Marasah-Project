@@ -1,0 +1,164 @@
+void MB_ZOHO_BOOKS_INTEG.List_down_credit_payments_from_books(string weekDay)
+{
+	// 	zoho.currentdate
+	current_date_formate = weekDay.toDate().toString("yyyy-MM-dd");
+	creditVendorIds = List();
+	for each  v in Add_Vendor[Payment_Terms != "Due on Recipt"]
+	{
+		if(v.Zoho_Books_Id != null)
+		{
+			creditVendorIds.add(v.Zoho_Books_Id);
+		}
+	}
+	// 	next_due_bill = List();
+	due_bills_for_credit_vendor = List();
+	iteration_count = {1,2,3,4,5,6,7,8,9,10};
+	page = 1;
+	for each  iteration in iteration_count
+	{
+		url2 = "https://www.zohoapis.sa/books/v3/bills?organization_id=150000132545&filter_by=Status.Unpaid&due_date_before=" + current_date_formate + "&page=" + page + "&per_page=200&sort_column=due_date&sort_order=A";
+		rep = invokeurl
+		[
+			url :url2
+			type :GET
+			connection:"zohobooks3"
+		];
+		bills_page = ifnull(rep.get("bills"),List());
+		if(bills_page.size() == 0)
+		{
+			break;
+		}
+		for each  bill in bills_page
+		{
+			// 			next_due_bill.add(bill);
+			if(creditVendorIds.contains(bill.get("vendor_id")))
+			{
+				due_bills_for_credit_vendor.add(bill);
+			}
+		}
+		has_more = ifnull(rep.get("page_context").get("has_more_page"),false);
+		if(has_more == false)
+		{
+			break;
+		}
+		page = page + 1;
+	}
+	// 	info "Total due bills: " + next_due_bill.size();
+	info "Credit-vendor due bills: " + due_bills_for_credit_vendor;
+	info "******************";
+	if(due_bills_for_credit_vendor.size() > 0)
+	{
+		vendorMap = Map();
+		for each  bill in due_bills_for_credit_vendor
+		{
+			vendorID = bill.get("vendor_id");
+			if(vendorMap.contains(vendorID))
+			{
+				vendorBills = vendorMap.get(vendorID);
+				vendorBills.add(bill);
+			}
+			else
+			{
+				vendorBills = List();
+				vendorBills.add(bill);
+				vendorMap.put(vendorID,vendorBills);
+			}
+		}
+		// 		info vendorMap;
+		createdRecords = List();
+		for each  venbill in vendorMap.keys()
+		{
+			vendorBills = vendorMap.get(venbill);
+			ft_vendor = Add_Vendor[Zoho_Books_Id == venbill];
+			item_coll = Collection();
+			for each  bill in vendorBills
+			{
+				rows = Vendor_Payment_Record.Bill_Items();
+				rows.Vendor_Name=ft_vendor.ID;
+				rows.Bill_Date=bill.get("date").toDate("yyyy-MM-dd");
+				rows.Due_Date=bill.get("due_date").toDate("yyyy-MM-dd");
+				rows.Bill=bill.get("bill_number");
+				rows.PO=bill.get("reference_number");
+				rows.Bill_Amount=ifnull(bill.get("total"),0.00);
+				rows.Amount_Due=ifnull(bill.get("balance"),0.00);
+				// ← balance, not total
+				rows.Books_Bill_ID=bill.get("bill_id");
+				if(bill.get("bill_number") != null && !bill.get("bill_number").isEmpty())
+				{
+					get_bill = Purchase_of_Asset[Bill_No == bill.get("bill_number").toString()];
+					if(get_bill.ID != null)
+					{
+						bill_view_url = "#Report:All_Bills1?bill_ID=" + get_bill.ID;
+						rows.View_Bills="<a href=\"" + bill_view_url + "\" target=\"_blank\">" + bill.get("bill_number") + "</a>";
+					}
+				}
+				if(Purchase_Order[Purchase_order == bill.get("reference_number").toString()].ID != null)
+				{
+					po = Purchase_Order[Purchase_order == bill.get("reference_number").toString()];
+					po_view_url = "#Page:View_PO_Bills?po_ID=" + po.ID;
+					rows.Purchase_Order2=ifnull(po.ID,null);
+					po_view_url = "#Page:View_PO_Bills?po_ID=" + po.ID;
+					rows.View_PO="<a href=\"" + po_view_url + "\" target=\"_blank\">" + po.Purchase_order + "</a>";
+				}
+				item_coll.insert(rows);
+			}
+			list_vp = Vendor_Payment_Record[ID != 0].count();
+			next_num = list_vp + 1;
+			if(next_num < 10)
+			{
+				new_ref = "000" + next_num;
+			}
+			else if(next_num < 100)
+			{
+				new_ref = "00" + next_num;
+			}
+			else if(next_num < 1000)
+			{
+				new_ref = "0" + next_num;
+			}
+			else
+			{
+				new_ref = next_num.toString();
+			}
+			new_vprec = insert into Vendor_Payment_Record
+			[
+				Added_User=zoho.loginuser
+				Vendor_Name=ft_vendor.ID
+				Bill_Items=item_coll
+				Status="Pending"
+				Payment_Category="Vendor Payment"
+				Logs="This Vendor Payment Record was created automatically by the system (Scheduled Weekly Job) on " + zoho.currenttime
+			];
+			ew_pay_rec = Vendor_Payment_Record[ID == new_vprec];
+			ew_pay_rec.Payment="PR-" + new_ref;
+			createdRecords.add({"ref":"PR-" + new_ref,"vendor":ifnull(ft_vendor.Company_Name,ft_vendor.Vendor_Display_Name),"bills":vendorBills.size(),"rec_id":ew_pay_rec.ID});
+		}
+	}
+	if(createdRecords.size() > 0)
+	{
+		sub = "Weekly Vendor Payment Run — " + createdRecords.size() + " record(s) created";
+		body = "The weekly vendor payment run has created " + createdRecords.size() + " payment record(s) for review:<br><br>";
+		body = body + "<table border='1' cellpadding='6' style='border-collapse:collapse;'>";
+		body = body + "<tr><th>Ref</th><th>Vendor</th><th>Bills</th></tr>";
+		for each  r in createdRecords
+		{
+			body = body + "<tr><td>" + r.get("ref") + "</td><td>" + r.get("vendor") + "</td><td>" + r.get("bills") + "</td></tr>";
+		}
+		body = body + "</table><br>Please review and process in LogiGate → Vendor Payment Records.";
+		p_email = List();
+		org_email = List();
+		for each  user in User_Master[Position == "Accountants" || Position == "Chief Accountants" || Position == "Accounting & Finance Manager"]
+		{
+			p_email.add(user.User_Email);
+			org_email.add(user.Organization_Email);
+		}
+		// 		response = zoho.pushNotification({portalEmail},sub,pushMessage,"All_Vendor_Payment_Records",ifnull(createdRecords.get("rec_id").get(0),null);
+		sendmail
+		[
+			from :"erp@marasah.com"
+			to :org_email
+			subject :sub
+			message :body
+		]
+	}
+}

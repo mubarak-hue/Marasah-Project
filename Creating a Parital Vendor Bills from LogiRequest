@@ -1,0 +1,133 @@
+	partial_bills = Purchase_of_Asset[ID == recID];
+	lgr = LogiRequest[ID == partial_bills.LogiRequest1];
+	fgPOID = lgr.Purchase_Orders.get(0);
+	po_rec = Purchase_Order[ID == fgPOID];
+	thisapp.MB_ZOHO_BOOKS_INTEG.inventory_uom_calculation(partial_bills.ID);
+	all_updated_true = false;
+	try 
+	{
+		all_updated_true = true;
+		for each  po_line in po_rec.Line_Items
+		{
+			// && po_line.Bill__Category != "Direct Expense" && po_line.Bill__Category != "Fixed Asset Repair & Maintenance" && po_line.Bill__Category != "Fixed Asset Betterment"
+			for each  pb_dn in partial_bills.Asset_Details
+			{
+				if(po_line.Requested_item_ID == pb_dn.Requested_Item.toString())
+				{
+					billed_this_time = ifnull(pb_dn.Quantity,0.00);
+					if(!partial_bills.FG_Expense.trim().isEmpty() && !partial_bills.FG_Bill.trim().isEmpty())
+					{
+						new_remaining = ifnull(po_line.Remaining_Qty,po_line.Quantity) - billed_this_time;
+					}
+					else
+					{
+						new_remaining = billed_this_time;
+					}
+					info "New Remaining Qty :" + new_remaining;
+					if(new_remaining < 0)
+					{
+						alert_msg = "\nWARNING: over-billed line '" + po_line.Item_Description + "' on bill " + partial_bills.ID + " — review required.";
+						info alert_msg;
+						openUrl("#Page:Alert_presets?alert_info=" + alert_msg,"popup window","height=auto,width=100%");
+					}
+					else
+					{
+						po_line.Remaining_Qty=new_remaining;
+						po_line.Line_Billing_Status=if(new_remaining <= 0,"Fully Billed",if(pb_dn.Billed_Expensed == true,"Partially Billed","Not Billed"));
+					}
+					break;
+				}
+			}
+		}
+		get_partial_bills_dn = List();
+		itemsList = Collection();
+		for each  pb_dn in partial_bills.Asset_Details
+		{
+			if(pb_dn.Billed_Expensed == true && pb_dn.Remaining_Qty == 0)
+			{
+				get_partial_bills_dn.add(pb_dn.Requested_Item);
+			}
+			if(pb_dn.Billed_Expensed == true)
+			{
+				rows = Purchase_of_Asset.Asset_Details();
+				rows.Billed_Expensed=pb_dn.Billed_Expensed;
+				rows.PO_Category=pb_dn.PO_Category;
+				rows.Item_Description=pb_dn.Item_Description;
+				rows.SKU_Serial_No=pb_dn.SKU_Serial_No;
+				rows.Account=pb_dn.Account;
+				rows.Remaining_Qty=ifnull(pb_dn.Remaining_Qty,0.00);
+				rows.Line_billing_status=pb_dn.Line_billing_status;
+				rows.Ordered=ifnull(pb_dn.Ordered,0.0);
+				rows.Quantity=pb_dn.Quantity;
+				rows.Rate=pb_dn.Rate;
+				rows.Discount_Amount=pb_dn.Discount_Amount;
+				rows.Tax=pb_dn.Tax;
+				rows.Tax_Amount=pb_dn.Tax_Amount;
+				rows.Amount=pb_dn.Amount;
+				rows.Project=pb_dn.Project;
+				rows.Branch1=pb_dn.Branch1;
+				rows.Department=pb_dn.Department;
+				rows.Requested_Item=pb_dn.Requested_Item;
+				// 			getReqItem = Requested_Items[ID == pb_dn.Requested_Item];
+				// 			getReqItem.Expense_Billed=true;
+				itemsList.insert(rows);
+			}
+		}
+		check_all_lgr_item_billed = true;
+		for each  lgr_item in lgr.Requested_Items
+		{
+			if(get_partial_bills_dn.contains(lgr_item.ID))
+			{
+				lgr_item.Expense_Billed=true;
+			}
+			if(lgr_item.Expense_Billed != true)
+			{
+				check_all_lgr_item_billed = false;
+			}
+		}
+		get_status_of_po = "";
+		if(check_all_lgr_item_billed)
+		{
+			lgr.Partially_Billed=false;
+			get_status_of_po = "Billed";
+			po_rec.Status= "Billed";
+			lgr.Status="Delivery Note & Bill Added";
+			lgr.Logs=lgr.Logs + "\nDelivery Note & Bills Added by: " + zoho.loginuser + " at: " + zoho.currenttime;
+		}
+		else
+		{
+			lgr.Partially_Billed=true;
+			get_status_of_po = "Partially Billed";
+			po_rec.Status= "Partially Billed";
+			lgr.Status="Partially Billed";
+			lgr.Logs=lgr.Logs + "\nDelivery Note & Bills Partially Added by: " + zoho.loginuser + " at: " + zoho.currenttime;
+		}
+		partial_bills.Asset_Details.clear();
+		partial_bills.Asset_Details.insert(itemsList);
+		if(lgr.Asset_Masters != null && lgr.Asset_Receiving_Checklist_GPS_PO_Request == true)
+		{
+			for each  asset in lgr.Asset_Masters
+			{
+				get_cklst = Asset_Receiving_Inspection_Checklist[Asset_Name == asset];
+				get_cklst.Vendor_docs_Added=true;
+				get_cklst.Status="Vendor Bill / Delivery Note Skipped";
+				get_cklst.Vendor_Bills=ifnull(lgr.Bills_Attachment,{});
+				get_cklst.Completed_On19=zoho.currentdate;
+				get_cklst.Logs=get_cklst.Logs + "\nGPS vendor documents were successfully linked from LGR " + lgr.Request + " by " + zoho.loginuser + " at " + zoho.currenttime + ".";
+			}
+		}
+		// 	Trigger function to post the updated bill to fiananceGate 
+		// 	the function call from schedule.
+		// 		thisapp.finance_gate.create_vendor_bills_to_fg(partial_bills.ID);
+	}
+	catch (error)
+	{
+		all_updated_true = false;
+		info "Error :" + error;
+		return;
+	}
+	if(all_updated_true)
+	{
+		partial_bills.Record_Approved_Time=zoho.currenttime;
+		openUrl("#Page:Alert_presets?alert_info=Hold for some seconds system processing the bill","popup window","height=auto,width=100%");
+	}

@@ -1,0 +1,223 @@
+	org = "150000132545";
+// 	purch = Purchase_of_Asset[ID == input.id];
+// 	vend = Add_Vendor[ID == purch.Vendor_Name];
+// 	getVendor = zoho.books.getRecordsByID("contacts",org,vend.Zoho_Books_Id,"zohobooks3");
+// 	// 	info getVendor;
+// 	contact = getVendor.get("contact");
+// 	vat_reg_id = contact.get("vat_reg_no");
+// 	customers = Add_Customer[ID == purch.Customer];
+// 	customerID = customers.Zoho_Books_Id;
+// 	vat_rg_org = vat_reg_id.remove(" ");
+// 	billMap = Map();
+// 	// 	lineitemsMp = List();
+// 	billMap.put("vendor_id",vend.Zoho_Books_Id);
+// 	//from vendor form
+// 	billMap.put("permit_number",purch.Permit);
+// 	//from vendor form
+// 	billMap.put("reference_number",purch.Order_Number);
+// 	//purchase order number in creator 
+// 	billMap.put("bill_number",purch.Bill_No);
+// 	billMap.put("date",purch.Bill_Date);
+// 	billMap.put("due_date",purch.Due_Date);
+// 	billMap.put("payment_terms_label",purch.Payment_Terms);
+// 	billMap.put("discount_type","item_level");
+// 	billMap.put("tax_reg_no",vat_rg_org);
+// 	line_list = List();
+// 	for each  rw in purch.Asset_Details
+// 	{
+// 		if(rw.PO_Category == "Assets")
+// 		{
+// 			asst = Asset_Master_Entry[ID == rw.Asset];
+// 			acnt = Asset_Type[ID == asst.Asset_Type];
+// 			acntId = Chart_of_Accounts[ID == acnt.Asset_Account];
+// 			tx = Tax[ID == rw.Tax];
+// 			liItemsmp = Map();
+// 			liItemsmp.put("description",asst.Asset_Name);
+// 			liItemsmp.put("account_id",acntId.Zoho_Books_ID);
+// 			liItemsmp.put("rate",rw.Rate);
+// 			liItemsmp.put("discount",rw.Discount_Amount);
+// 			liItemsmp.put("quantity",rw.Quantity);
+// 			liItemsmp.put("tax_id",tx.Zoho_Books_ID);
+// 			ftProject = Projects[ID == rw.Project].Zoho_Books_ID;
+// 			// 			liItemsmp.put("project_id",ftProject);
+// 			reportedTagsList = List();
+// 			if(rw.Project != null)
+// 			{
+// 				projects = Projects[ID == rw.Project];
+// 				projectID = projects.Zoho_Books_ID;
+// 				liItemsmp.put("project_id",projectID);
+// 				getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+// 				project = getProjects.get("project");
+// 				contractNo = "";
+// 				for each  ln in project.get("custom_fields")
+// 				{
+// 					if(ln.get("field_id") == "1079000002720673")
+// 					{
+// 						contractNo = ln.get("value");
+// 						info "Con No :" + contractNo;
+// 						ft_prj_contr = Project_Contract_Nos[Contract_No == contractNo];
+// 						reportedTagsList.add({"tag_option_id":ft_prj_contr.Tag_Opt_ID,"tag_id":ft_prj_contr.Zoho_Books_ID});
+// 					}
+// 				}
+// 			}
+// 			if(rw.Branch1 != null)
+// 			{
+// 				ft_brnc = Branch[ID == rw.Branch1];
+// 				reportedTagsList.add({"tag_option_id":ft_brnc.Option_ID,"tag_id":ft_brnc.Tag_ID});
+// 			}
+// 			if(rw.Department == "Industrial Services Department")
+// 			{
+// 				reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000049065"});
+// 			}
+// 			else if(rw.Department == "Administration Department")
+// 			{
+// 				reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000073145"});
+// 			}
+// 			liItemsmp.put("tags",reportedTagsList);
+// 			liItemsmp.put("tax_id",tx.Zoho_Books_ID);
+// 			liItemsmp.put("tax_percentage",tx.Tax_Name);
+// 			liItemsmp.put("line_item_taxes",{{"tax_id":tx.Zoho_Books_ID,"tax_name":tx.Tax_Name,"tax_amount":rw.Tax_Amount.toDecimal()}});
+// 			line_list.add(liItemsmp);
+// 		}
+// 		else if(rw.PO_Category == "Materials")
+// 		{
+// 			inv = Inventory_Master[ID == rw.Item1];
+// 			tx = Tax[ID == rw.Tax];
+// 			// 			info tx.Zoho_Books_ID;
+// 			liItemsmp = Map();
+// 			liItemsmp.put("name",inv.Name);
+// 			liItemsmp.put("account_id",Chart_of_Accounts[ID == rw.Account].Zoho_Books_ID);
+// 			liItemsmp.put("rate",rw.Rate);
+// 			liItemsmp.put("discount",rw.Discount_Amount);
+// 			liItemsmp.put("quantity",rw.Quantity);
+// 			liItemsmp.put("tax_id",tx.Zoho_Books_ID);
+// 			reportedTagsList = List();
+// 			// 			ftProject = Projects[ID == rw.Project].Zoho_Books_ID;
+// 			if(rw.Project != null)
+// 			{
+// 				projects = Projects[ID == rw.Project];
+// 				projectID = projects.Zoho_Books_ID;
+// 				liItemsmp.put("project_id",projectID);
+// 				getProjects = zoho.books.getRecordsByID("projects",org,projectID,"zohobooks3");
+// 				project = getProjects.get("project");
+// 				contractNo = "";
+// 				for each  ln in project.get("custom_fields")
+// 				{
+// 					if(ln.get("field_id") == "1079000002720673")
+// 					{
+// 						contractNo = ln.get("value");
+// 						ft_prj_contr = Project_Contract_Nos[Contract_No == contractNo];
+// 						reportedTagsList.add({"tag_option_id":ft_prj_contr.Tag_Opt_ID,"tag_id":ft_prj_contr.Zoho_Books_ID});
+// 					}
+// 				}
+// 			}
+// 			if(rw.Branch1 != null)
+// 			{
+// 				ft_brnc = Branch[ID == rw.Branch1];
+// 				reportedTagsList.add({"tag_option_id":ft_brnc.Option_ID,"tag_id":ft_brnc.Tag_ID});
+// 			}
+// 			if(rw.Department == "Industrial Services Department")
+// 			{
+// 				reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000049065"});
+// 			}
+// 			else if(rw.Department == "Administration Department")
+// 			{
+// 				reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000073145"});
+// 			}
+// 			liItemsmp.put("tags",reportedTagsList);
+// 			liItemsmp.put("tax_id",tx.Zoho_Books_ID);
+// 			liItemsmp.put("tax_percentage",tx.Tax_Percentage);
+// 			liItemsmp.put("line_item_taxes",{{"tax_id":tx.Zoho_Books_ID,"tax_name":tx.Tax_Name,"tax_amount":rw.Tax_Amount.toDecimal()}});
+// 			line_list.add(liItemsmp);
+// 		}
+// 	}
+// 	billMap.put("line_items",line_list);
+// 	billMap.put("tax_treatment","vat_registered");
+// 	billMap.put("tax_total",purch.Tax_Total.toDecimal());
+// 	billMap.put("sub_total",purch.Sub_Total);
+// 	billMap.put("total",purch.Total);
+// 	params = Map();
+// 	params.put("JSONstring",billMap);
+// 	// 		info "Json params :"+ billMap;
+// 	if(purch.Zoho_Books_Id == null || purch.Zoho_Books_Id.trim() == "")
+// 	{
+// 		resp = zoho.books.createRecord("bills",org,billMap,"zohobooks3");
+// 		// 			info resp;
+// 		info resp.getJSON("message");
+// 		if(resp.get("code") == 0)
+// 		{
+// 			resp_inv = resp.getJSON("bill");
+// 			purch.Zoho_Books_Id=resp_inv.getJSON("bill_id");
+// 			billID = resp_inv.getJSON("bill_id");
+// 			purch.Status=approver;
+// 			purch.Logs=purch.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+// 			if(purch.Documents != null)
+// 			{
+// 				for each  doc in purch.Documents
+// 				{
+// 					url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/fixed-assets/report/All_Bills1/" + input.id + "/Documents/download?filepath=" + doc;
+// 					var2 = invokeurl
+// 					[
+// 						url :url_endpoint
+// 						type :GET
+// 						connection:"za_connections"
+// 					];
+// 					// 			info var2;
+// 					var2.setparamName("attachment");
+// 					// 	info var;
+// 					response1 = invokeurl
+// 					[
+// 						url :"https://www.zohoapis.sa/books/v3/bills/" + billID + "/attachment?organization_id=150000132545"
+// 						type :POST
+// 						files:var2
+// 						connection:"zohobooks3"
+// 					];
+// 					info "post response:" + response1.get("message");
+// 				}
+// 			}
+// 		}
+// 		else
+// 		{
+// 			purch.Status="Chief Accountant Approved";
+// 		}
+// 	}
+// 	else if(purch.Zoho_Books_Id != null || purch.Zoho_Books_Id.trim() != "")
+// 	{
+// 		updateResponse = zoho.books.updateRecord("bills",org,purch.Zoho_Books_Id,billMap,"zohobooks3");
+// 		if(updateResponse.get("code") == 0)
+// 		{
+// 			resp_inv = updateResponse.getJSON("bill");
+// 			purch.Zoho_Books_Id=resp_inv.getJSON("bill_id");
+// 			billID = resp_inv.getJSON("bill_id");
+// 			// 		purch.Status=approver;
+// 			purch.Logs=purch.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+// 			if(purch.Documents != null)
+// 			{
+// 				for each  doc in purch.Documents
+// 				{
+// 					url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/fixed-assets/report/All_Bills1/" + input.id + "/Documents/download?filepath=" + doc;
+// 					var2 = invokeurl
+// 					[
+// 						url :url_endpoint
+// 						type :GET
+// 						connection:"za_connections"
+// 					];
+// 					// 			info var2;
+// 					var2.setparamName("attachment");
+// 					// 	info var;
+// 					response1 = invokeurl
+// 					[
+// 						url :"https://www.zohoapis.sa/books/v3/bills/" + billID + "/attachment?organization_id=150000132545"
+// 						type :POST
+// 						files:var2
+// 						connection:"zohobooks3"
+// 					];
+// 					info "post response:" + response1.get("message");
+// 				}
+// 			}
+// 		}
+// 		else
+// 		{
+// 			purch.Status="Chief Accountant Approved";
+// 		}
+// 	}

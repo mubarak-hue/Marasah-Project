@@ -1,0 +1,200 @@
+org = "150000132545";
+	ft_po = Purchase_Order[ID == input.id];
+	ft_vendor = Add_Vendor[ID = ft_po.Vendor];
+	//info "Vendor ID :" + ft_vendor.Zoho_Books_Id;
+	ft_tax = Tax[Tax_Name = ft_po.Tax_treatment];
+	//info ft_tax ;
+	po_date = ft_po.Date_field;
+	del_date = ft_po.Delivery_date;
+	f_po_date = toString(po_date,"yyyy-MM-dd");
+	f_del_date = toString(del_date,"yyyy-MM-dd");
+	getVendor = zoho.books.getRecordsByID("contacts",org,ft_vendor.Zoho_Books_Id,"zohobooks3");
+	// 	info getVendor;
+	contact = getVendor.get("contact");
+	vat_reg_id = contact.get("vat_reg_no");
+	vat_rg_org = vat_reg_id.remove(" ");
+	// 	info vat_rg_org;
+	projects = Projects[ID == ft_po.Project_Name];
+	projectName = projects.Zoho_Books_ID;
+	// 	purchase order data map 
+	head = Map();
+	po_mp = Map();
+	po_mp.put("date",f_po_date);
+	po_mp.put("purchaseorder_number",ft_po.Purchase_order);
+	po_mp.put("status","draft");
+	//info "Vendor ID : " + ft_vendor.Zoho_Books_Id;
+	//info "Vendor Name :" + ft_vendor.Vendor_Display_Name;
+	//info "Org ID :" + Cid;
+	po_mp.put("vendor_id",ft_vendor.Zoho_Books_Id);
+	po_mp.put("place_of_supply",ft_po.Place_of_supply.toString());
+	po_mp.put("reference_number",ft_po.Reference_number);
+	po_mp.put("delivery_date",f_del_date);
+	po_mp.put("tax_reg_no",vat_rg_org);
+	po_mp.put("exchange_rate",ft_po.Exchange_rate);
+	po_mp.put("Delivery_Address","MARASAH COMPANY L.L.C");
+	po_mp.put("status","draft");
+	po_cateList = List();
+	line_list = List();
+	for each  line in ft_po.Line_Items
+	{
+		ft_acc = Chart_of_Accounts[ID == line.Account];
+		acc_id = ft_acc.Zoho_Books_ID;
+		ft_items = Asset_Master_Entry[ID == line.Asset];
+		item_name = ft_items.Asset_Name;
+		l_mp = Map();
+		// 			l_mp.put("name",ftInv.Name);
+		l_mp.put("name",line.Item_Description);
+		l_mp.put("sku",line.SKU_Serial_No);
+		l_mp.put("rate",line.Price);
+		l_mp.put("quantity",line.Quantity);
+		l_mp.put("account_id",acc_id);
+		tax_id = "";
+		taxperc = "";
+		taxName = "";
+		if(line.Tax == "Standard Rate [ 15% ]")
+		{
+			tax_id = "1079000000018043";
+			taxperc = 15;
+			taxName = Tax[Zoho_Books_ID == tax_id].Tax_Name;
+		}
+		else
+		{
+			tax_id = "1079000000018049";
+			taxperc = 0;
+			taxName = Tax[Zoho_Books_ID == tax_id].Tax_Name;
+		}
+		l_mp.put("tax_id",tax_id);
+		l_mp.put("tax_percentage",taxperc);
+		l_mp.put("line_item_taxes",{{"tax_id":tax_id,"tax_name":taxName,"tax_amount":line.Tax_Amount.toDecimal()}});
+		ftProject = Projects[ID == line.Project].Zoho_Books_ID;
+		l_mp.put("project_id",ftProject);
+		reportedTagsList = List();
+		if(line.Branch == "Head Office")
+		if(line.Branch1 != null)
+		{
+			branchs = Branch[ID == line.Branch1];
+			reportedTagsList.add({"tag_option_id":branchs.Option_ID,"tag_id":branchs.Tag_ID});
+		}
+		// 	departments 
+		if(line.Department == "Industrial Services Department")
+		{
+			info "industrial service departmet ";
+			reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000049065"});
+		}
+		else if(line.Department == "Adminstrative Department")
+		{
+			info "Adminstrative Department";
+			reportedTagsList.add({"tag_id":"1079000000000512","tag_option_id":"1079000000073145"});
+		}
+		l_mp.put("tags",reportedTagsList);
+		line_list.add(l_mp);
+		// }
+	}
+	po_mp.put("line_items",line_list);
+	po_mp.put("sub_total",ft_po.Subtotal);
+	po_mp.put("discount",ft_po.Discount);
+	po_mp.put("taxes",{{"tax_amount":ft_po.Tax_Total,"tax_name":"Standard Rate (15%)","tax_amount_formatted":"SAR" + ft_po.Tax_Total,"tax_id":"1079000000018043"}});
+	total_amt = ft_po.Total;
+	po_mp.put("total",total_amt.toNumber());
+	po_mp.put("notes",ft_po.Notes);
+	param = Map();
+	param.put("JSONString",po_mp);
+	// 		info po_mp ;
+	if(ft_po.Zoho_Books_ID == null || ft_po.Zoho_Books_ID == "")
+	{
+		createPO = zoho.books.createRecord("purchaseorders?ignore_auto_number_generation=true",org,po_mp,"zohobooks3");
+		info createPO.get("message");
+		if(createPO.get("code") == 0)
+		{
+			// 			info createPO.get("message");
+			created_po = createPO.get("purchaseorder");
+			po_rec_id = created_po.get("purchaseorder_id");
+			info "Pruchase Order ID :" + po_rec_id;
+			ft_po.Zoho_Books_ID=created_po.get("purchaseorder_id");
+			ft_po.Status=approver;
+			ft_po.Logs=ft_po.Logs + "\nApproved by :" + zoho.loginuser + " at :" + zoho.currenttime;
+			// 			sendNotification 
+			ftUserMaster = User_Master[Position == "Quotation Initiator"].User_Email;
+			email = {ftUserMaster};
+			pushMessage = "Purchase Order " + ft_po.Purchase_order + " has been approved by Accounts team.";
+			sub = " PO Has been Approved " + ft_po.Purchase_order;
+			response = zoho.pushNotification(email,sub,pushMessage,"All_Purchase_Orders",ft_po.ID);
+			if(ft_po.Documents != "")
+			{
+				for each  doc in ft_po.Documents
+				{
+					// 					info doc;
+					url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/fixed-assets/report/All_Purchase_Orders/" + ft_po.ID + "/Documents/download?filepath=" + doc;
+					var2 = invokeurl
+					[
+						url :url_endpoint
+						type :GET
+						connection:"za_connections"
+					];
+					// 			info var2;
+					var2.setparamName("attachment");
+					// 	info var;
+					response1 = invokeurl
+					[
+						url :"https://www.zohoapis.sa/books/v3/purchaseorders/" + po_rec_id + "/attachment?organization_id=150000132545"
+						type :POST
+						files:var2
+						connection:"zohobooks3"
+					];
+					info "post response:" + response1.get("message");
+				}
+			}
+		}
+		else
+		{
+			ft_po.Status="Pending";
+		}
+	}
+	else if(ft_po.Zoho_Books_ID != null && ft_po.Zoho_Books_ID.trim() != "")
+	{
+		info "PO Updated ";
+		updatePO = zoho.books.updateRecord("purchaseorders",org,ft_po.Zoho_Books_ID,po_mp,"zohobooks3");
+		info updatePO.get("message");
+		if(updatePO.get("code") == 0)
+		{
+			updatedPO = updatePO.get("purchaseorder");
+			po_rec_id = updatedPO.get("purchaseorder_id");
+			ft_po.Zoho_Books_ID=po_rec_id;
+			info "PO Record ID :" + po_rec_id;
+			ft_po.Status=approver;
+			ft_po.Logs=ft_po.Logs + "\nUpdated by :" + zoho.loginuser + " at :" + zoho.currenttime;
+			ftUserMaster = User_Master[Position == "Quotation Initiator"].User_Email;
+			email = {ftUserMaster};
+			pushMessage = "Purchase Order " + ft_po.Purchase_order + " has been updated by Accounts team.";
+			sub = " PO Has been Approved " + ft_po.Purchase_order;
+			response = zoho.pushNotification(email,sub,pushMessage,"All_Purchase_Orders",ft_po.ID);
+			if(ft_po.Documents != "")
+			{
+				for each  doc in ft_po
+				{
+					url_endpoint = "https://creator.zoho.sa/api/v2/m.alsuhaimi_marasah/fixed-assets/report/All_Purchase_Orders/" + ft_po.ID + "/Documents/download?filepath=" + doc;
+					var2 = invokeurl
+					[
+						url :url_endpoint
+						type :GET
+						connection:"za_connections"
+					];
+					// 			info var2;
+					var2.setparamName("attachment");
+					// 	info var;
+					response1 = invokeurl
+					[
+						url :"https://www.zohoapis.sa/books/v3/purchaseorders/" + po_rec_id + "/attachment?organization_id=150000132545"
+						type :POST
+						files:var2
+						connection:"zohobooks3"
+					];
+					info "post response:" + response1.get("message");
+				}
+			}
+		}
+		else
+		{
+			ft_po.Status="Pending";
+		}
+	}

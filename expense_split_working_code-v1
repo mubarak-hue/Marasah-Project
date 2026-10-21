@@ -1,0 +1,127 @@
+orgEmail = {};
+	portalEmail = {};
+	for each  user in User_Master[Position == "Chief Accountants" || Position == "Accounting & Finance Manager" || Position == "Accountants"]
+	{
+		orgEmail.add(user.Organization_Email);
+		portalEmail.add(user.User_Email);
+	}
+	bill = Purchase_of_Asset[ID == bill_id];
+	lgr = LogiRequest[ID == bill.LogiRequest1];
+	request_proceesd_exp_line = List();
+	request_proceesd_ass_inv_line = List();
+	taxTotal = 0;
+	line_amount = 0;
+	expenseItemList = Collection();
+	hasExpense = false;
+	hasBill = false;
+	for each  billItems in bill.Asset_Details
+	{
+		expense_items = Expenses.Expense_Lines();
+		if((billItems.PO_Category == "Direct Expense" && billItems.Billed_Expensed == true) || (billItems.PO_Category == "Fixed Asset Repair & Maintenance" && billItems.Billed_Expensed == true))
+		{
+			hasExpense = true;
+			expense_items.Description=billItems.Item_Description;
+			expense_items.Expense_Account=ifnull(Chart_of_Accounts[ID == billItems.Account].ID,null);
+			if(billItems.Quantity == 0)
+			{
+				qty = 1;
+			}
+			else
+			{
+				qty = billItems.Quantity;
+			}
+			line_qty_amount = qty * ifnull(billItems.Rate.toDecimal(),0.00);
+			info "LINE QTY AMOUTN :"+ line_qty_amount;
+			expense_items.Quantity = ifnull(qty,0);
+			expense_items.Rate=round(line_qty_amount.toDecimal(),5);
+			expense_items.Amount=round(line_qty_amount.toDecimal(),5);
+			expense_items.Tax_Amount=billItems.Tax_Amount.toDecimal();
+			taxTotal = taxTotal + billItems.Tax_Amount.toDecimal();
+			line_amount = line_amount + line_qty_amount.toDecimal();
+			expense_items.Tax=ifnull(billItems.Tax,null);
+			expense_items.Project=ifnull(billItems.Project,null);
+			expense_items.Branch=ifnull(billItems.Branch1,null);
+			if(!billItems.Department.isEmpty() && billItems.Department != "")
+			{
+				deptName = ifnull(billItems.Department,"").trim();
+				deptAlias = Map();
+				deptAlias.put("Industrial Services Department","Industrial Services Division");
+				deptName = ifnull(deptAlias.get(deptName),deptName);
+				dept = Department_Master[Department_Name == deptName && Department_Name != ""];
+				if(dept.count() == 1)
+				{
+					expense_items.Department=dept.ID;
+				}
+			}
+			expenseItemList.insert(expense_items);
+			request_proceesd_exp_line.add(billItems.Requested_Item);
+		}
+		else 
+        {
+			hasBill = true;
+        }
+	}
+	if(hasExpense && expenseItemList.size() > 0)
+	{
+		expense_date = if(lgr.Is_Non_Registered_Vendor1 == true,lgr.Payment_Date.toString("dd-MMM-yyyy"),bill.Bill_Date.toString("dd-MMM-yyyy"));
+		amount_inc_tax = line_amount + taxTotal;
+		truncated_ = (amount_inc_tax.toDecimal() * 10000).toLong() / 10000.0;
+		try 
+		{
+			create_expense = insert into Expenses
+			[
+				Added_User=zoho.loginuser
+				Expense_Date=expense_date
+				Paid_Through=ifnull(Chart_of_Accounts[ID == bill.Procurement_Card].ID,null)
+				Itemize=true
+				Reference=bill.Bill_No
+				Status="Accountant Verified"
+				Place_Of_Supply="SA"
+				Non_Registered_Vendor=ifnull(bill.Vendor_Name_Not_Registered,"")
+				VAT_Number=ifnull(bill.VAT_Number_Non_Resisted_Vendor,"")
+				Sub_Total=ifnull(taxTotal,0.00)
+				Total=ifnull(truncated_,0.00)
+				Vendor=ifnull(bill.Vendor_Name,null)
+				LogiRequest=ifnull(lgr.ID,null)
+				Expense_Lines=expenseItemList
+				Notes=bill.Notes
+				Logs=bill.Logs + "\nCreated from LogiRequest by " + bill.Added_User + " on " + zoho.currenttime
+			];
+			info "New Expense Record Resp :" + create_expense;
+			pushmessage = "A new expense created via LogiRequest is awaiting approval in FinanceGate.";
+			notSub = "Action Required: Expense Approval Pending - " + bill.Bill_No;
+			sendmail
+			[
+				from :"erp@marasah.com"
+				to :orgEmail
+				subject :notSub
+				message :pushmessage
+			]
+			new_expense = Expenses[ID == create_expense];
+			new_expense.Receipt=ifnull(bill.Documents,{});
+			new_expense.Attachments=ifnull(bill.Attachment,{});
+			lgr.Status="Expense / Bill Created";
+			lgr.Logs=lgr.Logs + " \n Expense Created By : " + bill.Added_User + " at : " + zoho.currenttime;
+			bill.Status="Accountant Verified";
+			for each  exID in request_proceesd_exp_line
+			{
+				lgrReqItem = Requested_Items[ID == exID];
+				lgrReqItem.Expense_Billed=true;
+				bill.Bill_Expense_Created="Yes";
+				// 			need to remove the all items that has bee created as a expense from the bill 
+			}
+			ft_cv = Cash_Voucher[LGR_Reference == bill.LogiRequest1];
+			ft_cv.Expense_Record_ID=if(ft_cv.ID != null,create_expense,null);
+// 			verify_existing_bill 
+			try{new_expense.ID != null}
+			{
+				info "Created expense successfully";
+				
+				
+			}
+		}		catch (exp_error)
+		{
+			openUrl("#Page:Alert_presets?alert_info=" + exp_error,"popup window","height=auto,width=100%");
+			return;
+		}
+	}

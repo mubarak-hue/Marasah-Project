@@ -1,0 +1,100 @@
+billID = bill.get("bill_id");
+billDate = bill.get("date").toDate();
+organizationID = organization.get("organization_id");
+cf = bill.get("custom_fields");
+lgr_rec_id = "";
+if(cf.size() > 0)
+{
+	for each  rec in cf
+	{
+		if(rec.get("field_id") == "1079000005928259")
+		{
+			lgr_rec_id = rec.get("value");
+			break;
+		}
+	}
+}
+if(!lgr_rec_id.isEmpty())
+{
+	try 
+	{
+		response = invokeurl
+		[
+			url :"https://www.zohoapis.sa/books/v3/bills/" + billID + "/approve?organization_id=" + organizationID
+			type :POST
+			connection:"z_books"
+		];
+		info "Bill Approved Resp :" + response;
+		try 
+		{
+			ftLogRec = invokeurl
+			[
+				url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/LogiRequest_Report/" + lgr_rec_id.toLong()
+				type :GET
+				connection:"zohobooks_conn"
+			];
+			//info ftLogRec;
+			relData = ftLogRec.get("data");
+			loc_of_request = relData.get("Location_of_Requester").get("ID");
+			get_project = relData.get("Project_Name").get("ID");
+			lgStatus = "";
+			paymentOption = false;
+			for each  itemLoc in relData.get("Requested_Items")
+			{
+				if(itemLoc.get("Location").get("ID") == null && loc_of_request != null)
+				{
+					lgStatus = "Delivered";
+					paymentOption = true;
+				}
+				else if(itemLoc.get("Location").get("ID") == loc_of_request || !get_project.trim().isEmpty())
+				{
+					lgStatus = "Delivered";
+					paymentOption = true;
+				}
+				else
+				{
+					if(relData.get("Request_Method") == "De-Mobilization Request")
+					{
+						lgStatus = "De-Mobilization Request";
+						paymentOption = "";
+						break;
+					}
+					else
+					{
+						lgStatus = "Mobilization Request";
+						paymentOption = "";
+						break;
+					}
+				}
+			}
+			info lgStatus;
+			dataMap = Map();
+			dataMap.put("Status",lgStatus);
+			dataMap.put("Mobilized_from_Vendor",paymentOption);
+			paramsList = List();
+			paramsList.add(dataMap);
+			payload = Map();
+			payload.put("data",paramsList);
+			updateResp = invokeurl
+			[
+				url :"https://www.zohoapis.sa/creator/v2.1/data/m.alsuhaimi_marasah/fixed-assets/report/LogiRequest_Report/" + lgr_rec_id.toLong()
+				type :PATCH
+				parameters:payload.toString()
+				connection:"zohobooks_conn"
+			];
+			info "Update Status On Logirequest :" + updateResp;
+		}
+		catch (er)
+		{
+			info "Error while update the status to LogiGate :" + er;
+		}
+	}
+	catch (error)
+	{
+		info "Error while approve the bill : " + error;
+	}
+}
+else
+{
+	info "This Bill doesn't associated with LogiRequest";
+}

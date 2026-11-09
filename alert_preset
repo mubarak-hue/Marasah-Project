@@ -1,0 +1,1 @@
+openUrl("#Page:Alert_presets?alert_info=" + encodeUrl("The Payment receipt is not attached to the Vendor payment. Kindly attach the payment receipt and submit."), "popup window", "height=400,width=600");

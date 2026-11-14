@@ -1,0 +1,18 @@
+info response.get("message");
+					journalID = response.getJSON("journal").get("journal_id");
+					// 					attach_lgr_overview_pdf 
+					url1 = "https://creatorapp.zohopublic.sa/m.alsuhaimi_marasah/fixed-assets/record-pdf/LogiRequest_Report/" + lgReq.ID + "/Logirequest_doc_" + lgReq.Request + "/g4SzVuaMe8URr4Jrtm2b7hTWGZy3qZt6T24JYvdrwkOzdrSnXwfYjyRME1E53T4yqpbdvPHdzqOv5FK9ADxN7jvDDPQkvDgrChPQ";
+					file_resp = invokeurl
+					[
+						url :url1
+						type :GET
+					];
+					file_resp.setParamName("attachment");
+					up = invokeurl
+					[
+						url :booksBase + "/" + journalID + "/attachment?organization_id=" + org
+						type :POST
+						files:file_resp
+						connection:"zohobooks3"
+					];
+					info "Attachment upload: " + up.get("message");

@@ -10,7 +10,7 @@ info response.get("message");
 					file_resp.setParamName("attachment");
 					up = invokeurl
 					[
-						url :booksBase + "/" + journalID + "/attachment?organization_id=" + org
+						url :url :"https://www.zohoapis.sa/books/v3/journals/" + jid + "/attachment?organization_id=" + org
 						type :POST
 						files:file_resp
 						connection:"zohobooks3"
